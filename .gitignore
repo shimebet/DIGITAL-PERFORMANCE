@@ -1,0 +1,64 @@
+# ============================================
+# DIGITAL PERFORMANCE MONITORING PLATFORM
+# ============================================
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Build output
+dist/
+**/dist/
+build/
+**/build/
+.next/
+**/.next/
+
+# Test coverage
+coverage/
+**/coverage/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+**/.cache/
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Prisma generated client
+apps/api/src/generated/prisma/
+
+# Local database files
+*.db
+*.db-journal
+
+# Miscellaneous
+*.swp
+*.swo
