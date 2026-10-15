@@ -22,10 +22,12 @@ export interface PerformanceSummary {
     phoneCalls: number;
     customersContacted: number;
     customersEducated: number;
+    productCustomersEngaged?: number | null;
   };
 
   conversion: {
     rate: number;
+    denominator?: 'CUSTOMERS_ENGAGED' | 'CUSTOMERS_EDUCATED';
   };
 
   activation: {
@@ -45,6 +47,85 @@ export interface PerformanceSummary {
   };
 
   activityCount: number;
+}
+
+export type PerformanceStatus =
+  | 'ACHIEVED'
+  | 'ON_TRACK'
+  | 'NEEDS_ATTENTION'
+  | 'CRITICAL'
+  | 'NO_TARGET';
+
+export interface BranchRankingRow {
+  rank: number;
+
+  branchId: string;
+  branchCode: string;
+  branchName: string;
+
+  districtId: string;
+  districtName: string;
+
+  regionId: string;
+  regionName: string;
+
+  target: number;
+
+  customerVisits: number;
+  customersEducated: number;
+
+  activations: number;
+  transactions: number;
+
+  conversionRate: number;
+  transactionConversionRate: number;
+
+  achievementRate: number;
+  remainingTarget: number;
+
+  activityCount: number;
+
+  status: PerformanceStatus;
+}
+
+export interface StaffRankingRow {
+  rank: number;
+
+  staffId: string;
+  employeeNumber: string;
+
+  firstName: string;
+  middleName: string | null;
+  lastName: string;
+
+  branchId: string;
+  branchCode: string;
+  branchName: string;
+
+  districtId: string;
+  districtName: string;
+
+  regionId: string;
+  regionName: string;
+
+  target: number;
+
+  customerVisits: number;
+  customersEducated: number;
+
+  activations: number;
+  reactivations: number;
+  transactions: number;
+
+  conversionRate: number;
+  transactionConversionRate: number;
+
+  achievementRate: number;
+  remainingTarget: number;
+
+  activityCount: number;
+
+  status: PerformanceStatus;
 }
 
 export interface SubmissionSummary {

@@ -6,6 +6,7 @@ import {
   AppBar,
   Avatar,
   Box,
+  Divider,
   IconButton,
   Menu,
   MenuItem,
@@ -16,6 +17,7 @@ import {
 } from '@mui/material';
 
 import {
+  LockOutlined,
   LogoutOutlined,
   MenuOutlined,
   NotificationsOutlined,
@@ -33,6 +35,10 @@ import {
 import {
   logoutApi,
 } from '../../api/auth.api';
+
+import {
+  queryClient,
+} from '../../app/query-client';
 
 import {
   useAuthStore,
@@ -62,19 +68,25 @@ export function AppHeader() {
 
   const toggleMobileSidebar =
     useUiStore(
-      (state) =>
+      (
+        state,
+      ) =>
         state.toggleMobileSidebar,
     );
 
   const user =
     useAuthStore(
-      (state) =>
+      (
+        state,
+      ) =>
         state.user,
     );
 
   const clearSession =
     useAuthStore(
-      (state) =>
+      (
+        state,
+      ) =>
         state.clearSession,
     );
 
@@ -82,9 +94,9 @@ export function AppHeader() {
     anchorEl,
     setAnchorEl,
   ] =
-    useState<null | HTMLElement>(
-      null,
-    );
+    useState<
+      null | HTMLElement
+    >(null);
 
   const menuOpen =
     Boolean(
@@ -92,7 +104,25 @@ export function AppHeader() {
     );
 
   const initials =
-    `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase();
+    `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`
+      .toUpperCase();
+
+  const fullName =
+    [
+      user?.firstName,
+      user?.middleName,
+      user?.lastName,
+    ]
+      .filter(
+        Boolean,
+      )
+      .join(
+        ' ',
+      );
+
+  // ==========================================================================
+  // LOGOUT
+  // ==========================================================================
 
   async function handleLogout() {
     setAnchorEl(
@@ -102,11 +132,14 @@ export function AppHeader() {
     try {
       await logoutApi();
     } catch {
-      // Local session must still be cleared
-      // when the API logout request fails.
+      // A backend/network failure must never prevent local logout.
     }
 
+    await queryClient.cancelQueries();
+
     clearSession();
+
+    queryClient.clear();
 
     navigate(
       '/login',
@@ -191,8 +224,7 @@ export function AppHeader() {
             variant="caption"
             color="text.secondary"
           >
-            Monitoring &
-            Reporting Platform
+            Monitoring &amp; Reporting Platform
           </Typography>
         </Box>
 
@@ -283,26 +315,52 @@ export function AppHeader() {
                 2,
 
               py:
-                1.25,
+                1.5,
 
               minWidth:
-                220,
+                240,
             }}
           >
             <Typography
               variant="subtitle2"
+              sx={{
+                fontWeight:
+                  700,
+              }}
             >
-              {user?.firstName}{' '}
-              {user?.lastName}
+              {fullName ||
+                'User'}
             </Typography>
 
             <Typography
               variant="caption"
               color="text.secondary"
+              sx={{
+                display:
+                  'block',
+              }}
             >
               {user?.username}
             </Typography>
+
+            {user?.roles?.[0] && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{
+                  display:
+                    'block',
+
+                  mt:
+                    0.25,
+                }}
+              >
+                {user.roles[0]}
+              </Typography>
+            )}
           </Box>
+
+          <Divider />
 
           <MenuItem
             onClick={() => {
@@ -323,8 +381,32 @@ export function AppHeader() {
               }}
             />
 
-            Profile
+            My Profile
           </MenuItem>
+
+          <MenuItem
+            onClick={() => {
+              setAnchorEl(
+                null,
+              );
+
+              navigate(
+                '/change-password',
+              );
+            }}
+          >
+            <LockOutlined
+              fontSize="small"
+              sx={{
+                mr:
+                  1.5,
+              }}
+            />
+
+            Change Password
+          </MenuItem>
+
+          <Divider />
 
           <MenuItem
             onClick={

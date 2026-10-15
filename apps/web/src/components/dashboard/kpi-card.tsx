@@ -1,63 +1,78 @@
-import type {
-  ReactNode,
-} from 'react';
+import type { ReactNode } from "react";
 
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-} from '@mui/material';
+import { Box, Card, CardContent, Typography } from "@mui/material";
 
 interface KpiCardProps {
   title: string;
 
-  value:
-    | string
-    | number;
+  value: string | number;
 
   subtitle?: string;
 
   icon?: ReactNode;
 }
 
-export function KpiCard({
-  title,
-  value,
-  subtitle,
-  icon,
-}: KpiCardProps) {
+export function KpiCard({ title, value, subtitle, icon }: KpiCardProps) {
   return (
     <Card
       elevation={0}
       sx={{
-        height:
-          '100%',
+        height: "100%",
 
-        border:
-          '1px solid',
+        border: "1px solid",
 
-        borderColor:
-          'divider',
+        borderColor: "divider",
+
+        borderRadius: 2.5,
+
+        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+
+        "&:hover": {
+          transform: "translateY(-2px)",
+
+          boxShadow: 2,
+        },
       }}
     >
-      <CardContent>
+      <CardContent
+        sx={{
+          height: "100%",
+
+          p: 2.25,
+
+          "&:last-child": {
+            pb: 2.25,
+          },
+        }}
+      >
         <Box
           sx={{
-            display:
-              'flex',
+            height: "100%",
 
-            justifyContent:
-              'space-between',
+            display: "flex",
 
-            gap:
-              2,
+            justifyContent: "space-between",
+
+            alignItems: "flex-start",
+
+            gap: 2,
           }}
         >
-          <Box>
+          <Box
+            sx={{
+              minWidth: 0,
+
+              flex: 1,
+            }}
+          >
             <Typography
               variant="body2"
               color="text.secondary"
+              sx={{
+                fontWeight: 600,
+
+                lineHeight: 1.3,
+              }}
             >
               {title}
             </Typography>
@@ -65,11 +80,13 @@ export function KpiCard({
             <Typography
               variant="h4"
               sx={{
-                mt:
-                  1,
+                mt: 0.75,
 
-                fontWeight:
-                  700,
+                fontWeight: 700,
+
+                lineHeight: 1.15,
+
+                overflowWrap: "anywhere",
               }}
             >
               {value}
@@ -79,6 +96,13 @@ export function KpiCard({
               <Typography
                 variant="caption"
                 color="text.secondary"
+                sx={{
+                  display: "block",
+
+                  mt: 0.75,
+
+                  lineHeight: 1.35,
+                }}
               >
                 {subtitle}
               </Typography>
@@ -88,29 +112,25 @@ export function KpiCard({
           {icon && (
             <Box
               sx={{
-                width:
-                  44,
+                width: 44,
 
-                height:
-                  44,
+                height: 44,
 
-                borderRadius:
-                  2,
+                flexShrink: 0,
 
-                bgcolor:
-                  'primary.light',
+                borderRadius: 2,
 
-                color:
-                  'primary.main',
+                bgcolor: "action.hover",
 
-                display:
-                  'grid',
+                color: "primary.main",
 
-                placeItems:
-                  'center',
+                display: "grid",
 
-                flexShrink:
-                  0,
+                placeItems: "center",
+
+                "& svg": {
+                  fontSize: 24,
+                },
               }}
             >
               {icon}

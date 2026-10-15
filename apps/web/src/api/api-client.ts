@@ -15,6 +15,10 @@ import {
   API_ENDPOINTS,
 } from './endpoints';
 
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
 const API_URL =
   import.meta.env.VITE_API_URL;
 
@@ -24,11 +28,17 @@ if (!API_URL) {
   );
 }
 
+// ============================================================================
+// API CLIENT
+// ============================================================================
+
 export const apiClient =
   axios.create({
-    baseURL: API_URL,
+    baseURL:
+      API_URL,
 
-    timeout: 30_000,
+    timeout:
+      30_000,
 
     headers: {
       'Content-Type':
@@ -36,13 +46,23 @@ export const apiClient =
     },
   });
 
+// ============================================================================
+// RETRY REQUEST TYPE
+// ============================================================================
+
 interface RetryRequestConfig
   extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
 
+// ============================================================================
+// REQUEST INTERCEPTOR
+// ============================================================================
+
 apiClient.interceptors.request.use(
-  (config) => {
+  (
+    config,
+  ) => {
     const accessToken =
       useAuthStore
         .getState()
@@ -51,57 +71,156 @@ apiClient.interceptors.request.use(
     if (accessToken) {
       config.headers.Authorization =
         `Bearer ${accessToken}`;
+    } else {
+      delete config
+        .headers
+        .Authorization;
     }
 
     return config;
   },
 );
 
+// ============================================================================
+// REFRESH COORDINATION
+// ============================================================================
+//
+// Only one refresh request is shared for the SAME refresh token.
+//
+// If the account changes while a refresh is running, the old refresh response
+// is rejected and is NOT allowed to restore the previous session.
+// ============================================================================
+
 let refreshPromise:
   | Promise<RefreshResponse>
-  | null = null;
+  | null =
+  null;
+
+let refreshPromiseToken:
+  | string
+  | null =
+  null;
 
 async function refreshSession() {
-  const auth =
+  const initialAuth =
     useAuthStore.getState();
 
-  if (!auth.refreshToken) {
+  const refreshToken =
+    initialAuth.refreshToken;
+
+  const userId =
+    initialAuth.user?.id ??
+    null;
+
+  if (
+    !refreshToken ||
+    !userId ||
+    !initialAuth.isAuthenticated
+  ) {
     throw new Error(
       'Refresh token is unavailable',
     );
   }
 
-  if (!refreshPromise) {
-    refreshPromise =
+  // --------------------------------------------------------------------------
+  // START A NEW REFRESH IF:
+  //
+  // 1. No refresh is currently running
+  // 2. The existing refresh belongs to another session/token
+  // --------------------------------------------------------------------------
+
+  if (
+    !refreshPromise ||
+    refreshPromiseToken !==
+      refreshToken
+  ) {
+    const tokenForRequest =
+      refreshToken;
+
+    refreshPromiseToken =
+      tokenForRequest;
+
+    const currentPromise =
       axios
         .post<RefreshResponse>(
           `${API_URL}${API_ENDPOINTS.auth.refresh}`,
           {
             refreshToken:
-              auth.refreshToken,
+              tokenForRequest,
           },
           {
             headers: {
               'Content-Type':
                 'application/json',
             },
+
+            timeout:
+              30_000,
           },
         )
         .then(
-          (response) =>
+          (
+            response,
+          ) =>
             response.data,
         )
-        .finally(() => {
-          refreshPromise =
-            null;
-        });
+        .finally(
+          () => {
+            // Do not clear a newer account's refresh promise.
+            if (
+              refreshPromise ===
+              currentPromise
+            ) {
+              refreshPromise =
+                null;
+
+              refreshPromiseToken =
+                null;
+            }
+          },
+        );
+
+    refreshPromise =
+      currentPromise;
   }
 
-  return refreshPromise;
+  const refreshed =
+    await refreshPromise;
+
+  // --------------------------------------------------------------------------
+  // SESSION-RACE PROTECTION
+  //
+  // Logout/account switch may have happened while HTTP refresh was in flight.
+  // Never restore the previous session in that case.
+  // --------------------------------------------------------------------------
+
+  const currentAuth =
+    useAuthStore.getState();
+
+  if (
+    !currentAuth.isAuthenticated ||
+    currentAuth.user?.id !==
+      userId ||
+    currentAuth.refreshToken !==
+      refreshToken
+  ) {
+    throw new Error(
+      'Authentication session changed during refresh',
+    );
+  }
+
+  return refreshed;
 }
 
+// ============================================================================
+// RESPONSE INTERCEPTOR
+// ============================================================================
+
 apiClient.interceptors.response.use(
-  (response) => response,
+  (
+    response,
+  ) =>
+    response,
 
   async (
     error: AxiosError,
@@ -111,9 +230,14 @@ apiClient.interceptors.response.use(
         | RetryRequestConfig
         | undefined;
 
+    // ------------------------------------------------------------------------
+    // ONLY HANDLE 401
+    // ------------------------------------------------------------------------
+
     if (
       !originalRequest ||
-      error.response?.status !== 401
+      error.response?.status !==
+        401
     ) {
       return Promise.reject(
         error,
@@ -121,7 +245,12 @@ apiClient.interceptors.response.use(
     }
 
     const requestUrl =
-      originalRequest.url ?? '';
+      originalRequest.url ??
+      '';
+
+    // ------------------------------------------------------------------------
+    // NEVER REFRESH LOGIN OR REFRESH CALLS
+    // ------------------------------------------------------------------------
 
     if (
       requestUrl.includes(
@@ -135,6 +264,10 @@ apiClient.interceptors.response.use(
         error,
       );
     }
+
+    // ------------------------------------------------------------------------
+    // PREVENT RETRY LOOP
+    // ------------------------------------------------------------------------
 
     if (
       originalRequest._retry
@@ -151,19 +284,39 @@ apiClient.interceptors.response.use(
     originalRequest._retry =
       true;
 
+    // ------------------------------------------------------------------------
+    // REFRESH
+    // ------------------------------------------------------------------------
+
     try {
       const refreshed =
         await refreshSession();
 
-      useAuthStore
-        .getState()
-        .updateSession(
-          refreshed.user,
-          refreshed.accessToken,
-          refreshed.refreshToken,
-        );
+      // ----------------------------------------------------------------------
+      // VERIFY SESSION IS STILL THE SAME BEFORE WRITING NEW TOKENS
+      // ----------------------------------------------------------------------
 
-      originalRequest.headers.Authorization =
+      const currentAuth =
+        useAuthStore.getState();
+
+      if (
+        !currentAuth.isAuthenticated ||
+        !currentAuth.user
+      ) {
+        throw new Error(
+          'Authentication session is no longer active',
+        );
+      }
+
+      currentAuth.updateSession(
+        refreshed.user,
+        refreshed.accessToken,
+        refreshed.refreshToken,
+      );
+
+      originalRequest
+        .headers
+        .Authorization =
         `Bearer ${refreshed.accessToken}`;
 
       return apiClient(

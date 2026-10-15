@@ -11,14 +11,20 @@ import type {
   ChangePasswordRequest,
   LoginRequest,
   LoginResponse,
+  UpdateMyProfileRequest,
 } from '../types/auth.types';
 
 import type {
   ApiMessageResponse,
 } from '../types/api.types';
 
+// ============================================================================
+// LOGIN
+// ============================================================================
+
 export async function loginApi(
-  payload: LoginRequest,
+  payload:
+    LoginRequest,
 ) {
   const response =
     await apiClient.post<LoginResponse>(
@@ -29,6 +35,10 @@ export async function loginApi(
   return response.data;
 }
 
+// ============================================================================
+// CURRENT USER
+// ============================================================================
+
 export async function getCurrentUserApi() {
   const response =
     await apiClient.get<AuthUser>(
@@ -37,6 +47,27 @@ export async function getCurrentUserApi() {
 
   return response.data;
 }
+
+// ============================================================================
+// UPDATE CURRENT USER PROFILE
+// ============================================================================
+
+export async function updateMyProfileApi(
+  payload:
+    UpdateMyProfileRequest,
+) {
+  const response =
+    await apiClient.patch<AuthUser>(
+      API_ENDPOINTS.auth.me,
+      payload,
+    );
+
+  return response.data;
+}
+
+// ============================================================================
+// CHANGE PASSWORD
+// ============================================================================
 
 export async function changePasswordApi(
   payload:
@@ -50,6 +81,10 @@ export async function changePasswordApi(
 
   return response.data;
 }
+
+// ============================================================================
+// LOGOUT
+// ============================================================================
 
 export async function logoutApi() {
   const response =

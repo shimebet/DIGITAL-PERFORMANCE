@@ -1,3 +1,5 @@
+// src/pages/change-password-page.tsx
+
 import {
   useState,
 } from 'react';
@@ -34,6 +36,10 @@ import {
 } from '../api/auth.api';
 
 import {
+  queryClient,
+} from '../app/query-client';
+
+import {
   useAuthStore,
 } from '../stores/auth.store';
 
@@ -42,13 +48,19 @@ import {
   type ChangePasswordFormValues,
 } from '../validation/change-password.schema';
 
+// ============================================================================
+// CHANGE PASSWORD PAGE
+// ============================================================================
+
 export function ChangePasswordPage() {
   const navigate =
     useNavigate();
 
   const clearSession =
     useAuthStore(
-      (state) =>
+      (
+        state,
+      ) =>
         state.clearSession,
     );
 
@@ -56,9 +68,9 @@ export function ChangePasswordPage() {
     errorMessage,
     setErrorMessage,
   ] =
-    useState<string | null>(
-      null,
-    );
+    useState<
+      string | null
+    >(null);
 
   const {
     control,
@@ -77,11 +89,20 @@ export function ChangePasswordPage() {
         ),
 
       defaultValues: {
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
+        currentPassword:
+          '',
+
+        newPassword:
+          '',
+
+        confirmPassword:
+          '',
       },
     });
+
+  // ==========================================================================
+  // SUBMIT
+  // ==========================================================================
 
   async function onSubmit(
     values:
@@ -92,6 +113,10 @@ export function ChangePasswordPage() {
     );
 
     try {
+      // ----------------------------------------------------------------------
+      // CHANGE PASSWORD ON BACKEND
+      // ----------------------------------------------------------------------
+
       await changePasswordApi({
         currentPassword:
           values.currentPassword,
@@ -100,17 +125,55 @@ export function ChangePasswordPage() {
           values.newPassword,
       });
 
+      // ----------------------------------------------------------------------
+      // CANCEL REQUESTS USING THE OLD AUTHENTICATION SESSION
+      // ----------------------------------------------------------------------
+
+      await queryClient.cancelQueries();
+
+      // ----------------------------------------------------------------------
+      // CLEAR CURRENT AUTHENTICATION SESSION
+      // ----------------------------------------------------------------------
+      //
+      // The backend change-password operation revokes the refresh tokens.
+      // Therefore the frontend must also discard the old access/refresh token.
+      // ----------------------------------------------------------------------
+
       clearSession();
+
+      // ----------------------------------------------------------------------
+      // CLEAR CACHED SERVER DATA
+      // ----------------------------------------------------------------------
+      //
+      // This prevents data from the previous authenticated session remaining
+      // in memory when the user signs back in.
+      // ----------------------------------------------------------------------
+
+      queryClient.clear();
+
+      // ----------------------------------------------------------------------
+      // RETURN TO LOGIN
+      // ----------------------------------------------------------------------
 
       navigate(
         '/login',
         {
-          replace: true,
+          replace:
+            true,
+
+          state: {
+            passwordChanged:
+              true,
+          },
         },
       );
     } catch (
       error
     ) {
+      // ----------------------------------------------------------------------
+      // AXIOS / BACKEND ERROR
+      // ----------------------------------------------------------------------
+
       if (
         axios.isAxiosError(
           error,
@@ -135,11 +198,19 @@ export function ChangePasswordPage() {
         return;
       }
 
+      // ----------------------------------------------------------------------
+      // UNKNOWN ERROR
+      // ----------------------------------------------------------------------
+
       setErrorMessage(
         'Unable to change password.',
       );
     }
   }
+
+  // ==========================================================================
+  // RENDER
+  // ==========================================================================
 
   return (
     <Box
@@ -161,28 +232,52 @@ export function ChangePasswordPage() {
       }}
     >
       <Card
+        elevation={0}
         sx={{
           width:
             '100%',
 
           maxWidth:
             480,
+
+          border:
+            '1px solid',
+
+          borderColor:
+            'divider',
+
+          borderRadius:
+            3,
+
+          boxShadow:
+            '0 20px 60px rgba(15, 50, 35, 0.10)',
         }}
       >
         <CardContent
           sx={{
             p: {
-              xs: 3,
-              sm: 4,
+              xs:
+                3,
+
+              sm:
+                4,
             },
           }}
         >
           <Stack
             spacing={3}
           >
+            {/* ===============================================================
+                HEADER
+            =============================================================== */}
+
             <Box>
               <Typography
                 variant="h5"
+                sx={{
+                  fontWeight:
+                    700,
+                }}
               >
                 Change password
               </Typography>
@@ -190,22 +285,34 @@ export function ChangePasswordPage() {
               <Typography
                 color="text.secondary"
                 sx={{
-                  mt: 1,
+                  mt:
+                    1,
                 }}
               >
-                Change your initial
-                password before
-                continuing.
+                Change your password before continuing.
               </Typography>
             </Box>
+
+            {/* ===============================================================
+                ERROR MESSAGE
+            =============================================================== */}
 
             {errorMessage && (
               <Alert
                 severity="error"
+                onClose={() =>
+                  setErrorMessage(
+                    null,
+                  )
+                }
               >
                 {errorMessage}
               </Alert>
             )}
+
+            {/* ===============================================================
+                FORM
+            =============================================================== */}
 
             <Box
               component="form"
@@ -214,10 +321,15 @@ export function ChangePasswordPage() {
                   onSubmit,
                 )
               }
+              noValidate
             >
               <Stack
                 spacing={2}
               >
+                {/* ===========================================================
+                    CURRENT PASSWORD
+                =========================================================== */}
+
                 <Controller
                   name="currentPassword"
                   control={
@@ -231,6 +343,9 @@ export function ChangePasswordPage() {
                       type="password"
                       label="Current password"
                       fullWidth
+                      required
+                      autoComplete="current-password"
+                      autoFocus
                       error={
                         Boolean(
                           errors.currentPassword,
@@ -241,9 +356,16 @@ export function ChangePasswordPage() {
                           .currentPassword
                           ?.message
                       }
+                      disabled={
+                        isSubmitting
+                      }
                     />
                   )}
                 />
+
+                {/* ===========================================================
+                    NEW PASSWORD
+                =========================================================== */}
 
                 <Controller
                   name="newPassword"
@@ -258,6 +380,8 @@ export function ChangePasswordPage() {
                       type="password"
                       label="New password"
                       fullWidth
+                      required
+                      autoComplete="new-password"
                       error={
                         Boolean(
                           errors.newPassword,
@@ -268,9 +392,16 @@ export function ChangePasswordPage() {
                           .newPassword
                           ?.message
                       }
+                      disabled={
+                        isSubmitting
+                      }
                     />
                   )}
                 />
+
+                {/* ===========================================================
+                    CONFIRM NEW PASSWORD
+                =========================================================== */}
 
                 <Controller
                   name="confirmPassword"
@@ -285,6 +416,8 @@ export function ChangePasswordPage() {
                       type="password"
                       label="Confirm new password"
                       fullWidth
+                      required
+                      autoComplete="new-password"
                       error={
                         Boolean(
                           errors.confirmPassword,
@@ -295,9 +428,16 @@ export function ChangePasswordPage() {
                           .confirmPassword
                           ?.message
                       }
+                      disabled={
+                        isSubmitting
+                      }
                     />
                   )}
                 />
+
+                {/* ===========================================================
+                    SUBMIT BUTTON
+                =========================================================== */}
 
                 <Button
                   type="submit"
@@ -309,13 +449,24 @@ export function ChangePasswordPage() {
                   sx={{
                     minHeight:
                       48,
+
+                    mt:
+                      0.5,
                   }}
                 >
                   {isSubmitting ? (
-                    <CircularProgress
-                      size={22}
-                      color="inherit"
-                    />
+                    <>
+                      <CircularProgress
+                        size={20}
+                        color="inherit"
+                        sx={{
+                          mr:
+                            1,
+                        }}
+                      />
+
+                      Changing password...
+                    </>
                   ) : (
                     'Change password'
                   )}

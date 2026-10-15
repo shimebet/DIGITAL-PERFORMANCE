@@ -1,29 +1,104 @@
-import type {
-  ReactNode,
-} from 'react';
+import type { ReactNode } from "react";
 
 import {
-  DashboardOutlined,
+  AccountTreeOutlined,
+  AdminPanelSettingsOutlined,
+  AssessmentOutlined,
   AssignmentOutlined,
+  DashboardOutlined,
   FactCheckOutlined,
   GroupsOutlined,
-  TrackChangesOutlined,
   InsightsOutlined,
   NotificationsOutlined,
   SmartToyOutlined,
-  AssessmentOutlined,
-  AccountTreeOutlined,
-  AdminPanelSettingsOutlined,
   StorefrontOutlined,
-} from '@mui/icons-material';
+  TrackChangesOutlined,
+} from "@mui/icons-material";
+
+// ============================================================================
+// ROLE CONSTANTS
+// ============================================================================
+
+export const ROLE = {
+  SUPER_ADMIN: "SUPER_ADMIN",
+
+  SYSTEM_ADMIN: "SYSTEM_ADMIN",
+
+  REGIONAL_MANAGER: "REGIONAL_MANAGER",
+
+  REGIONAL_ANALYST: "REGIONAL_ANALYST",
+
+  DISTRICT_MANAGER: "DISTRICT_MANAGER",
+
+  DISTRICT_ANALYST: "DISTRICT_ANALYST",
+
+  BRANCH_MANAGER: "BRANCH_MANAGER",
+
+  DIGITAL_RESKILLED_STAFF: "DIGITAL_RESKILLED_STAFF",
+
+  AUDITOR: "AUDITOR",
+
+  READ_ONLY: "READ_ONLY",
+} as const;
+
+// ============================================================================
+// ROLE GROUPS
+// ============================================================================
+
+const ORGANIZATION_ADMIN_ROLES = [
+  ROLE.SUPER_ADMIN,
+  ROLE.SYSTEM_ADMIN,
+  ROLE.REGIONAL_MANAGER,
+  ROLE.DISTRICT_MANAGER,
+];
+
+const USER_ADMIN_ROLES = [ROLE.SUPER_ADMIN, ROLE.SYSTEM_ADMIN];
+
+const PRODUCT_ADMIN_ROLES = [ROLE.SUPER_ADMIN, ROLE.SYSTEM_ADMIN];
+
+const AI_ROLES = [
+  ROLE.SUPER_ADMIN,
+  ROLE.REGIONAL_MANAGER,
+  ROLE.REGIONAL_ANALYST,
+  ROLE.DISTRICT_MANAGER,
+  ROLE.DISTRICT_ANALYST,
+  ROLE.AUDITOR,
+];
+
+const REPORT_ROLES = [
+  ROLE.SUPER_ADMIN,
+  ROLE.SYSTEM_ADMIN,
+  ROLE.REGIONAL_MANAGER,
+  ROLE.REGIONAL_ANALYST,
+  ROLE.DISTRICT_MANAGER,
+  ROLE.DISTRICT_ANALYST,
+  ROLE.BRANCH_MANAGER,
+  ROLE.AUDITOR,
+  ROLE.READ_ONLY,
+];
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 export interface NavigationItem {
   label: string;
+
   path: string;
+
   icon: ReactNode;
 
+  /*
+   * Required backend permission.
+   */
   permission?: string;
 
+  /*
+   * Optional sidebar visibility restriction.
+   *
+   * This is UI-level visibility only.
+   * Backend authorization remains enforced separately.
+   */
   roles?: string[];
 }
 
@@ -33,226 +108,216 @@ export interface NavigationSection {
   items: NavigationItem[];
 }
 
-export const navigationSections:
-  NavigationSection[] = [
-    {
-      items: [
-        {
-          label:
-            'Dashboard',
+// ============================================================================
+// NAVIGATION
+// ============================================================================
 
-          path:
-            '/dashboard',
+export const navigationSections: NavigationSection[] = [
+  // ------------------------------------------------------------------------
+  // DASHBOARD
+  // ------------------------------------------------------------------------
 
-          icon:
-            <DashboardOutlined />,
+  {
+    items: [
+      {
+        label: "Dashboard",
 
-          permission:
-            'dashboard.read',
-        },
-      ],
-    },
+        path: "/dashboard",
 
-    {
-      label:
-        'Operations',
+        icon: <DashboardOutlined />,
 
-      items: [
-        {
-          label:
-            'Activities',
+        permission: "dashboard.read",
+      },
+    ],
+  },
 
-          path:
-            '/activities',
+  // ------------------------------------------------------------------------
+  // OPERATIONS
+  // ------------------------------------------------------------------------
 
-          icon:
-            <AssignmentOutlined />,
+  {
+    label: "Operations",
 
-          permission:
-            'activity.read',
-        },
+    items: [
+      {
+        label: "Activities",
 
-        {
-          label:
-            'Submissions',
+        path: "/activities",
 
-          path:
-            '/submissions',
+        icon: <AssignmentOutlined />,
 
-          icon:
-            <FactCheckOutlined />,
+        permission: "activity.read",
+      },
 
-          permission:
-            'submission.read',
-        },
+      {
+        label: "Submissions",
 
-        {
-          label:
-            'Follow-ups',
+        path: "/submissions",
 
-          path:
-            '/follow-ups',
+        icon: <FactCheckOutlined />,
 
-          icon:
-            <GroupsOutlined />,
+        permission: "submission.read",
+      },
 
-          permission:
-            'followup.read',
-        },
+      {
+        label: "Follow-ups",
 
-        {
-          label:
-            'Targets',
+        path: "/follow-ups",
 
-          path:
-            '/targets',
+        icon: <GroupsOutlined />,
 
-          icon:
-            <TrackChangesOutlined />,
+        permission: "followup.read",
+      },
 
-          permission:
-            'target.read',
-        },
-      ],
-    },
+      {
+        label: "Targets",
 
-    {
-      label:
-        'Management',
+        path: "/targets",
 
-      items: [
-        {
-          label:
-            'Performance',
+        icon: <TrackChangesOutlined />,
 
-          path:
-            '/performance',
+        permission: "target.read",
+      },
+    ],
+  },
 
-          icon:
-            <InsightsOutlined />,
+  // ------------------------------------------------------------------------
+  // MANAGEMENT
+  // ------------------------------------------------------------------------
 
-          permission:
-            'report.read',
-        },
+  {
+    label: "Management",
 
-        {
-          label:
-            'Alerts',
+    items: [
+      {
+        label: "Performance",
 
-          path:
-            '/alerts',
+        path: "/performance",
 
-          icon:
-            <NotificationsOutlined />,
+        icon: <InsightsOutlined />,
 
-          permission:
-            'alert.read',
-        },
+        permission: "report.read",
+      },
 
-        {
-          label:
-            'AI Insights',
+      {
+        label: "Alerts",
 
-          path:
-            '/ai-insights',
+        path: "/alerts",
 
-          icon:
-            <SmartToyOutlined />,
+        icon: <NotificationsOutlined />,
 
-          permission:
-            'ai.read',
-        },
+        permission: "alert.read",
+      },
 
-        {
-          label:
-            'Reports',
+      {
+        label: "AI Insights",
 
-          path:
-            '/reports',
+        path: "/ai-insights",
 
-          icon:
-            <AssessmentOutlined />,
+        icon: <SmartToyOutlined />,
 
-          permission:
-            'report.read',
-        },
-      ],
-    },
+        permission: "ai.read",
 
-    {
-      label:
-        'Administration',
+        roles: AI_ROLES,
+      },
 
-      items: [
-        {
-          label:
-            'Regions',
+      {
+        label: "Reports",
 
-          path:
-            '/admin/regions',
+        path: "/reports",
 
-          icon:
-            <AccountTreeOutlined />,
+        icon: <AssessmentOutlined />,
 
-          permission:
-            'region.read',
-        },
+        permission: "report.read",
 
-        {
-          label:
-            'Districts',
+        roles: REPORT_ROLES,
+      },
+    ],
+  },
 
-          path:
-            '/admin/districts',
+  // ------------------------------------------------------------------------
+  // ADMINISTRATION
+  // ------------------------------------------------------------------------
 
-          icon:
-            <AccountTreeOutlined />,
+  {
+    label: "Administration",
 
-          permission:
-            'district.read',
-        },
+    items: [
+      {
+        label: "Regions",
 
-        {
-          label:
-            'Branches',
+        path: "/admin/regions",
 
-          path:
-            '/admin/branches',
+        icon: <AccountTreeOutlined />,
 
-          icon:
-            <StorefrontOutlined />,
+        permission: "region.read",
 
-          permission:
-            'branch.read',
-        },
+        roles: ORGANIZATION_ADMIN_ROLES,
+      },
 
-        {
-          label:
-            'Users',
+      {
+        label: "Districts",
 
-          path:
-            '/admin/users',
+        path: "/admin/districts",
 
-          icon:
-            <AdminPanelSettingsOutlined />,
+        icon: <AccountTreeOutlined />,
 
-          permission:
-            'user.read',
-        },
+        permission: "district.read",
 
-        {
-          label:
-            'Products',
+        roles: ORGANIZATION_ADMIN_ROLES,
+      },
 
-          path:
-            '/admin/products',
+      {
+        label: "Branches",
 
-          icon:
-            <StorefrontOutlined />,
+        path: "/admin/branches",
 
-          permission:
-            'product.read',
-        },
-      ],
-    },
-  ];
+        icon: <StorefrontOutlined />,
+
+        permission: "branch.read",
+
+        roles: ORGANIZATION_ADMIN_ROLES,
+      },
+
+      {
+        label: "Users",
+
+        path: "/admin/users",
+
+        icon: <AdminPanelSettingsOutlined />,
+
+        permission: "user.read",
+
+        roles: USER_ADMIN_ROLES,
+      },
+
+      {
+        label: "Products",
+
+        path: "/admin/products",
+
+        icon: <StorefrontOutlined />,
+
+        permission: "product.read",
+
+        roles: PRODUCT_ADMIN_ROLES,
+      },
+    ],
+  },
+];
+
+// ============================================================================
+// EXPORTED ROLE GROUPS
+// ============================================================================
+
+export const navigationRoleGroups = {
+  organizationAdmin: ORGANIZATION_ADMIN_ROLES,
+
+  userAdmin: USER_ADMIN_ROLES,
+
+  productAdmin: PRODUCT_ADMIN_ROLES,
+
+  ai: AI_ROLES,
+
+  reports: REPORT_ROLES,
+};

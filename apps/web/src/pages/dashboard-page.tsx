@@ -1,537 +1,598 @@
-import {
-  Alert,
-  Box,
-  CircularProgress,
-  Typography,
-} from '@mui/material';
+import axios from "axios";
+
+import { Alert, Box, CircularProgress, Typography } from "@mui/material";
 
 import {
-  AssignmentTurnedInOutlined,
+  AdsClickOutlined,
   GroupsOutlined,
-  HowToRegOutlined,
-  PaymentsOutlined,
+  InsightsOutlined,
+  PersonSearchOutlined,
+  PointOfSaleOutlined,
+  SchoolOutlined,
   TrackChangesOutlined,
-  TrendingUpOutlined,
-} from '@mui/icons-material';
-import axios from 'axios';
-import {
-  useQuery,
-} from '@tanstack/react-query';
+} from "@mui/icons-material";
+
+import { useQuery } from "@tanstack/react-query";
 
 import {
+  getBranchPerformanceApi,
   getDailyTrendApi,
   getDashboardOverviewApi,
   getProductPerformanceApi,
-} from '../api/dashboard.api';
+} from "../api/dashboard.api";
 
-import {
-  KpiCard,
-} from '../components/dashboard/kpi-card';
+import { BranchPerformanceTable } from "../components/dashboard/branch-performance-table";
 
-import {
-  PerformanceTrendChart,
-} from '../components/dashboard/performance-trend-chart';
+import { KpiCard } from "../components/dashboard/kpi-card";
 
-import {
-  ProductPerformanceChart,
-} from '../components/dashboard/product-performance-chart';
+import { PerformanceTrendChart } from "../components/dashboard/performance-trend-chart";
 
-import {
-  OrganizationFilter,
-} from '../components/filters/organization-filter';
+import { ProductPerformanceChart } from "../components/dashboard/product-performance-chart";
 
-import {
-  useAuthStore,
-} from '../stores/auth.store';
+import { OrganizationFilter } from "../components/filters/organization-filter";
 
-import {
-  useFilterStore,
-} from '../stores/filter.store';
+import { useAuthStore } from "../stores/auth.store";
+
+import { useFilterStore } from "../stores/filter.store";
+
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
+function getDashboardErrorMessage(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+
+    const data = error.response?.data as
+      | {
+          message?: string | string[];
+        }
+      | undefined;
+
+    const message = Array.isArray(data?.message)
+      ? data.message.join(", ")
+      : data?.message;
+
+    if (message) {
+      return `${status ?? "Network error"}: ${message}`;
+    }
+
+    return error.message || "Unable to load dashboard data.";
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Unable to load dashboard data.";
+}
+
+// ============================================================================
+// SUMMARY PANEL
+// ============================================================================
+
+interface SummaryPanelProps {
+  title: string;
+
+  items: Array<{
+    label: string;
+
+    value: string | number;
+  }>;
+}
+
+function SummaryPanel({ title, items }: SummaryPanelProps) {
+  return (
+    <Box
+      sx={{
+        bgcolor: "background.paper",
+
+        border: "1px solid",
+
+        borderColor: "divider",
+
+        borderRadius: 2,
+
+        p: 3,
+
+        height: "100%",
+      }}
+    >
+      <Typography
+        variant="h6"
+        sx={{
+          mb: 2,
+        }}
+      >
+        {title}
+      </Typography>
+
+      <Box
+        sx={{
+          display: "grid",
+
+          gridTemplateColumns: {
+            xs: "1fr",
+
+            sm: "repeat(2, minmax(0, 1fr))",
+          },
+
+          gap: 2,
+        }}
+      >
+        {items.map((item) => (
+          <Box
+            key={item.label}
+            sx={{
+              p: 1.5,
+
+              border: "1px solid",
+
+              borderColor: "divider",
+
+              borderRadius: 2,
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              {item.label}
+            </Typography>
+
+            <Typography
+              variant="h6"
+              sx={{
+                mt: 0.25,
+              }}
+            >
+              {item.value}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+// ============================================================================
+// DASHBOARD
+// ============================================================================
 
 export function DashboardPage() {
-  const user =
-    useAuthStore(
-      (state) =>
-        state.user,
-    );
+  // ==========================================================================
+  // AUTHENTICATED USER
+  // ==========================================================================
 
-  const regionId =
-    useFilterStore(
-      (state) =>
-        state.regionId,
-    );
+  const user = useAuthStore((state) => state.user);
 
-  const districtId =
-    useFilterStore(
-      (state) =>
-        state.districtId,
-    );
+  // ==========================================================================
+  // GLOBAL DASHBOARD FILTERS
+  // ==========================================================================
 
-  const branchId =
-    useFilterStore(
-      (state) =>
-        state.branchId,
-    );
+  const regionId = useFilterStore((state) => state.regionId);
 
-  const productId =
-    useFilterStore(
-      (state) =>
-        state.productId,
-    );
+  const districtId = useFilterStore((state) => state.districtId);
 
-  const startDate =
-    useFilterStore(
-      (state) =>
-        state.startDate,
-    );
+  const branchId = useFilterStore((state) => state.branchId);
 
-  const endDate =
-    useFilterStore(
-      (state) =>
-        state.endDate,
-    );
+  const productId = useFilterStore((state) => state.productId);
 
-  const query = {
-    regionId:
-      regionId ||
-      undefined,
+  const startDate = useFilterStore((state) => state.startDate);
 
-    districtId:
-      districtId ||
-      undefined,
+  const endDate = useFilterStore((state) => state.endDate);
 
-    branchId:
-      branchId ||
-      undefined,
+  // ==========================================================================
+  // API QUERY
+  // ==========================================================================
 
-    productId:
-      productId ||
-      undefined,
+const isDigitalStaff =
+  user?.roles?.includes("DIGITAL_RESKILLED_STAFF") === true;
 
-    startDate:
-      startDate ||
-      undefined,
+const query = {
+  regionId: isDigitalStaff ? undefined : regionId || undefined,
+  districtId: isDigitalStaff ? undefined : districtId || undefined,
+  branchId: isDigitalStaff ? undefined : branchId || undefined,
+  productId: productId || undefined,
+  startDate: startDate || undefined,
+  endDate: endDate || undefined,
+};
 
-    endDate:
-      endDate ||
-      undefined,
-  };
+  // ==========================================================================
+  // OVERVIEW
+  // ==========================================================================
 
-  const overviewQuery =
-    useQuery({
-      queryKey: [
-        'dashboard-overview',
-        query,
-      ],
+  const overviewQuery = useQuery({
+    queryKey: [
+  "dashboard-overview",
+  user?.id,
+  query,
+],
 
-      queryFn: () =>
-        getDashboardOverviewApi(
-          query,
-        ),
-    });
+    queryFn: () => getDashboardOverviewApi(query),
+  });
 
-  const trendQuery =
-    useQuery({
-      queryKey: [
-        'dashboard-trend',
-        query,
-      ],
+  // ==========================================================================
+  // DAILY TREND
+  // ==========================================================================
 
-      queryFn: () =>
-        getDailyTrendApi(
-          query,
-        ),
-    });
+  const trendQuery = useQuery({
+    queryKey: [
+  "dashboard-trend",
+  user?.id,
+  query,
+],
 
-  const productQuery =
-    useQuery({
-      queryKey: [
-        'dashboard-products',
-        query,
-      ],
+    queryFn: () => getDailyTrendApi(query),
+  });
 
-      queryFn: () =>
-        getProductPerformanceApi(
-          query,
-        ),
-    });
+  // ==========================================================================
+  // PRODUCT PERFORMANCE
+  // ==========================================================================
+
+  const productQuery = useQuery({
+    queryKey: [
+  "dashboard-products",
+  user?.id,
+  query,
+],
+
+    queryFn: () => getProductPerformanceApi(query),
+  });
+
+  // ==========================================================================
+  // BRANCH PERFORMANCE
+  // ==========================================================================
+
+  const branchQuery = useQuery({
+    queryKey: [
+  "dashboard-branches",
+  user?.id,
+  query,
+],
+
+    queryFn: () => getBranchPerformanceApi(query),
+  });
+
+  // ==========================================================================
+  // LOADING / ERROR
+  // ==========================================================================
 
   const isLoading =
     overviewQuery.isLoading ||
     trendQuery.isLoading ||
-    productQuery.isLoading;
+    productQuery.isLoading ||
+    branchQuery.isLoading;
 
   const hasError =
     overviewQuery.isError ||
     trendQuery.isError ||
-    productQuery.isError;
+    productQuery.isError ||
+    branchQuery.isError;
 
-  const overview =
-    overviewQuery.data;
+  const dashboardError =
+    overviewQuery.error ??
+    trendQuery.error ??
+    productQuery.error ??
+    branchQuery.error;
 
-const dashboardError =
-  overviewQuery.error ??
-  trendQuery.error ??
-  productQuery.error;
+  const overview = overviewQuery.data;
 
-let dashboardErrorMessage =
-  'Unable to load dashboard data.';
-
-if (
-  axios.isAxiosError(
-    dashboardError,
-  )
-) {
-  const status =
-    dashboardError.response?.status;
-
-  const data =
-    dashboardError.response?.data as
-      | {
-          message?:
-            | string
-            | string[];
-        }
-      | undefined;
-
-  const message =
-    Array.isArray(
-      data?.message,
-    )
-      ? data.message.join(
-          ', ',
-        )
-      : data?.message;
-
-  dashboardErrorMessage =
-    `${status ?? 'Network error'}: ${
-      message ??
-      dashboardError.message
-    }`;
-}
+  // ==========================================================================
+  // RENDER
+  // ==========================================================================
 
   return (
     <Box
       sx={{
         p: {
-          xs:
-            2,
+          xs: 2,
 
-          md:
-            3,
+          md: 3,
         },
       }}
     >
+      {/* =====================================================================
+          PAGE HEADER
+      ===================================================================== */}
+
       <Box
         sx={{
-          mb:
-            3,
+          mb: 3,
         }}
       >
-        <Typography
-          variant="h4"
-        >
-          Digital Performance Dashboard
-        </Typography>
+        <Typography variant="h4">Digital Performance Dashboard</Typography>
 
         <Typography
           color="text.secondary"
           sx={{
-            mt:
-              0.5,
+            mt: 0.5,
           }}
         >
-          Welcome,{' '}
-          {user?.firstName}{' '}
-          {user?.lastName}.
+          Welcome, {user?.firstName} {user?.lastName}.
         </Typography>
       </Box>
 
+      {/* =====================================================================
+          FILTERS
+      ===================================================================== */}
+
       <Box
         sx={{
-          mb:
-            3,
+          mb: 3,
 
-          p:
-            2,
+          p: 2,
 
-          bgcolor:
-            'background.paper',
+          bgcolor: "background.paper",
 
-          border:
-            '1px solid',
+          border: "1px solid",
 
-          borderColor:
-            'divider',
+          borderColor: "divider",
 
-          borderRadius:
-            2,
+          borderRadius: 2,
         }}
       >
         <OrganizationFilter />
       </Box>
 
+      {/* =====================================================================
+          ERROR
+      ===================================================================== */}
+
       {hasError && (
-  <Alert
-    severity="error"
-    sx={{
-      mb: 3,
-    }}
-  >
-    {dashboardErrorMessage}
-  </Alert>
+        <Alert
+          severity="error"
+          sx={{
+            mb: 3,
+          }}
+        >
+          {getDashboardErrorMessage(dashboardError)}
+        </Alert>
       )}
+
+      {/* =====================================================================
+          LOADING
+      ===================================================================== */}
 
       {isLoading && (
         <Box
           sx={{
-            minHeight:
-              300,
+            minHeight: 300,
 
-            display:
-              'grid',
+            display: "grid",
 
-            placeItems:
-              'center',
+            placeItems: "center",
           }}
         >
           <CircularProgress />
         </Box>
       )}
 
-      {!isLoading &&
-        overview && (
-          <>
-           <Box
-  sx={{
-    display:
-      'grid',
+      {/* =====================================================================
+          CONTENT
+      ===================================================================== */}
 
-    gridTemplateColumns: {
-      xs:
-        'minmax(0, 1fr)',
+      {!isLoading && overview && (
+        <>
+          {/* ===============================================================
+                KPI SUMMARY
+            =============================================================== */}
 
-      lg:
-        'minmax(0, 1.35fr) minmax(0, 1fr)',
-    },
+          <Box
+            sx={{
+              display: "grid",
 
-    alignItems:
-      'stretch',
+              gridTemplateColumns: {
+                xs: "1fr",
 
-    gap:
-      2.5,
+                sm: "repeat(2, minmax(0, 1fr))",
 
-    mb:
-      3,
-  }}
->
-  <PerformanceTrendChart
-    data={
-      trendQuery.data ??
-      []
-    }
-  />
+                md: "repeat(3, minmax(0, 1fr))",
 
-  <ProductPerformanceChart
-    data={
-      productQuery.data ??
-      []
-    }
-  />
-</Box>
+                lg: "repeat(4, minmax(0, 1fr))",
 
-            <Box
-              sx={{
-                display:
-                  'grid',
+                xl: "repeat(7, minmax(0, 1fr))",
+              },
 
-                gridTemplateColumns: {
-                  xs:
-                    '1fr',
+              gap: 2,
 
-                  xl:
-                    'minmax(0, 1.4fr) minmax(0, 1fr)',
+              mb: 3,
+            }}
+          >
+            <KpiCard
+              title="Target"
+              value={overview.performance.achievement.target}
+              subtitle={
+                productId ? "Selected product target" : "Activation target"
+              }
+              icon={<TrackChangesOutlined />}
+            />
+
+            <KpiCard
+              title="Customer Visits"
+              value={overview.performance.activity.customerVisits}
+              subtitle={productId ? "All activity visits" : "Recorded visits"}
+              icon={<PersonSearchOutlined />}
+            />
+
+            <KpiCard
+              title="Customers Educated"
+              value={overview.performance.activity.customersEducated}
+              subtitle={
+                productId ? "All activity education" : "Customers educated"
+              }
+              icon={<SchoolOutlined />}
+            />
+
+            <KpiCard
+              title="Activations"
+              value={overview.performance.activation.activations}
+              subtitle={productId ? "Selected product" : "Total activations"}
+              icon={<AdsClickOutlined />}
+            />
+
+            <KpiCard
+              title="Transactions"
+              value={overview.performance.transaction.transactions}
+              subtitle={productId ? "Selected product" : "Total transactions"}
+              icon={<PointOfSaleOutlined />}
+            />
+
+            <KpiCard
+              title="Conversion"
+              value={`${overview.performance.conversion.rate.toFixed(1)}%`}
+              subtitle={
+                productId ? "Activations / engaged" : "Activations / educated"
+              }
+              icon={<GroupsOutlined />}
+            />
+
+            <KpiCard
+              title="Achievement"
+              value={`${overview.performance.achievement.percentage.toFixed(
+                1,
+              )}%`}
+              subtitle="Activations / target"
+              icon={<InsightsOutlined />}
+            />
+          </Box>
+
+          {/* ===============================================================
+                PRIMARY ANALYTICS
+            =============================================================== */}
+
+          <Box
+            sx={{
+              display: "grid",
+
+              gridTemplateColumns: {
+                xs: "1fr",
+
+                xl: "minmax(0, 1.35fr) minmax(0, 1fr)",
+              },
+
+              alignItems: "stretch",
+
+              gap: 2.5,
+
+              mb: 3,
+            }}
+          >
+            <PerformanceTrendChart data={trendQuery.data ?? []} />
+
+            <ProductPerformanceChart data={productQuery.data ?? []} />
+          </Box>
+
+          {/* ===============================================================
+                BRANCH PERFORMANCE
+            =============================================================== */}
+
+          <Box
+            sx={{
+              mb: 3,
+            }}
+          >
+            <BranchPerformanceTable data={branchQuery.data ?? []} />
+          </Box>
+
+          {/* ===============================================================
+                OPERATIONAL SUMMARIES
+            =============================================================== */}
+
+          <Box
+            sx={{
+              display: "grid",
+
+              gridTemplateColumns: {
+                xs: "1fr",
+
+                lg: "repeat(2, minmax(0, 1fr))",
+              },
+
+              gap: 3,
+            }}
+          >
+            <SummaryPanel
+              title="Submission Summary"
+              items={[
+                {
+                  label: "Total",
+
+                  value: overview.submissions.total,
                 },
 
-                gap:
-                  3,
+                {
+                  label: "Submitted",
 
-                mb:
-                  3,
-              }}
-            >
-              <PerformanceTrendChart
-                data={
-                  trendQuery.data ??
-                  []
-                }
-              />
-
-              <ProductPerformanceChart
-                data={
-                  productQuery.data ??
-                  []
-                }
-              />
-            </Box>
-
-            <Box
-              sx={{
-                display:
-                  'grid',
-
-                gridTemplateColumns: {
-                  xs:
-                    '1fr',
-
-                  md:
-                    'repeat(2, minmax(0, 1fr))',
+                  value: overview.submissions.submitted,
                 },
 
-                gap:
-                  3,
-              }}
-            >
-              <Box
-                sx={{
-                  bgcolor:
-                    'background.paper',
+                {
+                  label: "Resubmitted",
 
-                  border:
-                    '1px solid',
+                  value: overview.submissions.resubmitted,
+                },
 
-                  borderColor:
-                    'divider',
+                {
+                  label: "Reviewed",
 
-                  borderRadius:
-                    2,
+                  value: overview.submissions.reviewed,
+                },
 
-                  p:
-                    3,
-                }}
-              >
-                <Typography
-                  variant="h6"
-                  sx={{
-                    mb:
-                      2,
-                  }}
-                >
-                  Submission Summary
-                </Typography>
+                {
+                  label: "Approved",
 
-                <Typography>
-                  Total:{' '}
-                  {
-                    overview.submissions
-                      .total
-                  }
-                </Typography>
+                  value: overview.submissions.approved,
+                },
 
-                <Typography>
-                  Submitted:{' '}
-                  {
-                    overview.submissions
-                      .submitted
-                  }
-                </Typography>
+                {
+                  label: "Returned for Correction",
 
-                <Typography>
-                  Reviewed:{' '}
-                  {
-                    overview.submissions
-                      .reviewed
-                  }
-                </Typography>
+                  value: overview.submissions.returned,
+                },
+              ]}
+            />
 
-                <Typography>
-                  Approved:{' '}
-                  {
-                    overview.submissions
-                      .approved
-                  }
-                </Typography>
+            <SummaryPanel
+              title="Follow-up Summary"
+              items={[
+                {
+                  label: "Total",
 
-                <Typography>
-                  Returned:{' '}
-                  {
-                    overview.submissions
-                      .returned
-                  }
-                </Typography>
-              </Box>
+                  value: overview.followUps.total,
+                },
 
-              <Box
-                sx={{
-                  bgcolor:
-                    'background.paper',
+                {
+                  label: "Open",
 
-                  border:
-                    '1px solid',
+                  value: overview.followUps.open,
+                },
 
-                  borderColor:
-                    'divider',
+                {
+                  label: "Contacted",
 
-                  borderRadius:
-                    2,
+                  value: overview.followUps.contacted,
+                },
 
-                  p:
-                    3,
-                }}
-              >
-                <Typography
-                  variant="h6"
-                  sx={{
-                    mb:
-                      2,
-                  }}
-                >
-                  Follow-up Summary
-                </Typography>
+                {
+                  label: "Converted",
 
-                <Typography>
-                  Total:{' '}
-                  {
-                    overview.followUps
-                      .total
-                  }
-                </Typography>
+                  value: overview.followUps.converted,
+                },
 
-                <Typography>
-                  Open:{' '}
-                  {
-                    overview.followUps
-                      .open
-                  }
-                </Typography>
+                {
+                  label: "Rescheduled",
 
-                <Typography>
-                  Converted:{' '}
-                  {
-                    overview.followUps
-                      .converted
-                  }
-                </Typography>
+                  value: overview.followUps.rescheduled,
+                },
 
-                <Typography>
-                  Rescheduled:{' '}
-                  {
-                    overview.followUps
-                      .rescheduled
-                  }
-                </Typography>
+                {
+                  label: "Overdue",
 
-                <Typography>
-                  Overdue:{' '}
-                  {
-                    overview.followUps
-                      .overdue
-                  }
-                </Typography>
-              </Box>
-            </Box>
-          </>
-        )}
+                  value: overview.followUps.overdue,
+                },
+              ]}
+            />
+          </Box>
+        </>
+      )}
     </Box>
   );
 }

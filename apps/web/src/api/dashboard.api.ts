@@ -11,7 +11,10 @@ import type {
   DailyTrendRow,
   DashboardOverview,
   DashboardQuery,
+  PerformanceSummary,
   ProductPerformanceRow,
+  BranchRankingRow,
+StaffRankingRow,
 } from '../types/dashboard.types';
 
 function cleanParams(
@@ -22,8 +25,7 @@ function cleanParams(
       query,
     ).filter(
       ([, value]) =>
-        value !==
-          undefined &&
+        value !== undefined &&
         value !== '',
     ),
   );
@@ -35,6 +37,23 @@ export async function getDashboardOverviewApi(
   const response =
     await apiClient.get<DashboardOverview>(
       API_ENDPOINTS.dashboard.overview,
+      {
+        params:
+          cleanParams(
+            query,
+          ),
+      },
+    );
+
+  return response.data;
+}
+
+export async function getPerformanceSummaryApi(
+  query: DashboardQuery,
+) {
+  const response =
+    await apiClient.get<PerformanceSummary>(
+      API_ENDPOINTS.performance.summary,
       {
         params:
           cleanParams(
@@ -91,6 +110,34 @@ export async function getBranchPerformanceApi(
           cleanParams(
             query,
           ),
+      },
+    );
+
+  return response.data;
+}
+
+export async function getBranchRankingApi(
+  query: DashboardQuery,
+) {
+  const response =
+    await apiClient.get<BranchRankingRow[]>(
+      API_ENDPOINTS.performance.branchRanking,
+      {
+        params: cleanParams(query),
+      },
+    );
+
+  return response.data;
+}
+
+export async function getStaffRankingApi(
+  query: DashboardQuery,
+) {
+  const response =
+    await apiClient.get<StaffRankingRow[]>(
+      API_ENDPOINTS.performance.staffRanking,
+      {
+        params: cleanParams(query),
       },
     );
 

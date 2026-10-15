@@ -1,3 +1,5 @@
+// src/pages/login-page.tsx
+
 import {
   useState,
 } from 'react';
@@ -47,6 +49,19 @@ import {
   type LoginFormValues,
 } from '../validation/login.schema';
 
+// ============================================================================
+// LOGIN ROUTE STATE
+// ============================================================================
+
+interface LoginRouteState {
+  from?: string;
+  passwordChanged?: boolean;
+}
+
+// ============================================================================
+// LOGIN PAGE
+// ============================================================================
+
 export function LoginPage() {
   const navigate =
     useNavigate();
@@ -56,17 +71,24 @@ export function LoginPage() {
 
   const setSession =
     useAuthStore(
-      (state) =>
+      (
+        state,
+      ) =>
         state.setSession,
     );
+
+  const routeState =
+    location.state as
+      | LoginRouteState
+      | null;
 
   const [
     serverError,
     setServerError,
   ] =
-    useState<string | null>(
-      null,
-    );
+    useState<
+      string | null
+    >(null);
 
   const {
     control,
@@ -85,10 +107,17 @@ export function LoginPage() {
         ),
 
       defaultValues: {
-        username: '',
-        password: '',
+        username:
+          '',
+
+        password:
+          '',
       },
     });
+
+  // ==========================================================================
+  // LOGIN
+  // ==========================================================================
 
   async function onSubmit(
     values:
@@ -99,16 +128,35 @@ export function LoginPage() {
     );
 
     try {
+      // ----------------------------------------------------------------------
+      // LOGIN REQUEST
+      // ----------------------------------------------------------------------
+
       const result =
         await loginApi(
           values,
         );
+
+      // ----------------------------------------------------------------------
+      // SAVE AUTHENTICATED SESSION
+      // ----------------------------------------------------------------------
 
       setSession(
         result.user,
         result.accessToken,
         result.refreshToken,
       );
+
+      // ----------------------------------------------------------------------
+      // FORCE INITIAL PASSWORD CHANGE
+      // ----------------------------------------------------------------------
+      //
+      // Only users whose backend account still has:
+      //
+      // mustChangePassword = true
+      //
+      // are allowed to be sent here.
+      // ----------------------------------------------------------------------
 
       if (
         result.user
@@ -117,30 +165,62 @@ export function LoginPage() {
         navigate(
           '/change-password',
           {
-            replace: true,
+            replace:
+              true,
+
+            state:
+              null,
           },
         );
 
         return;
       }
 
-      const routeState =
-        location.state as
-          | {
-              from?: string;
-            }
-          | null;
+      // ----------------------------------------------------------------------
+      // RESOLVE POST-LOGIN DESTINATION
+      // ----------------------------------------------------------------------
+      //
+      // ProtectedRoute may have remembered the route the user originally
+      // attempted to open.
+      //
+      // However, /login and /change-password must NEVER become the final
+      // destination after a successful normal login.
+      // ----------------------------------------------------------------------
+
+      const requestedRoute =
+        routeState?.from;
+
+      const destination =
+        !requestedRoute ||
+        requestedRoute ===
+          '/login' ||
+        requestedRoute ===
+          '/change-password'
+          ? '/dashboard'
+          : requestedRoute;
+
+      // ----------------------------------------------------------------------
+      // NAVIGATE
+      // ----------------------------------------------------------------------
 
       navigate(
-        routeState?.from ??
-          '/dashboard',
+        destination,
         {
-          replace: true,
+          replace:
+            true,
+
+          // Remove stale "from" / passwordChanged route state.
+          state:
+            null,
         },
       );
     } catch (
       error
     ) {
+      // ----------------------------------------------------------------------
+      // BACKEND / AXIOS ERROR
+      // ----------------------------------------------------------------------
+
       if (
         axios.isAxiosError(
           error,
@@ -165,11 +245,19 @@ export function LoginPage() {
         return;
       }
 
+      // ----------------------------------------------------------------------
+      // UNKNOWN / NETWORK ERROR
+      // ----------------------------------------------------------------------
+
       setServerError(
         'Unable to connect to the server.',
       );
     }
   }
+
+  // ==========================================================================
+  // RENDER
+  // ==========================================================================
 
   return (
     <Card
@@ -197,19 +285,29 @@ export function LoginPage() {
       <CardContent
         sx={{
           p: {
-            xs: 3,
-            sm: 5,
+            xs:
+              3,
+
+            sm:
+              5,
           },
         }}
       >
         <Stack
           spacing={3}
         >
+          {/* =================================================================
+              HEADER
+          ================================================================= */}
+
           <Box>
             <Box
               sx={{
-                width: 58,
-                height: 58,
+                width:
+                  58,
+
+                height:
+                  58,
 
                 borderRadius:
                   2,
@@ -238,7 +336,8 @@ export function LoginPage() {
             <Typography
               variant="h4"
               sx={{
-                mb: 1,
+                mb:
+                  1,
               }}
             >
               Welcome back
@@ -247,18 +346,43 @@ export function LoginPage() {
             <Typography
               color="text.secondary"
             >
-              Digital Performance
-              Monitoring Platform
+              Digital Performance Monitoring Platform
             </Typography>
           </Box>
+
+          {/* =================================================================
+              PASSWORD CHANGED SUCCESS
+          ================================================================= */}
+
+          {routeState?.passwordChanged && (
+            <Alert
+              severity="success"
+            >
+              Password changed successfully.
+              Please sign in with your new password.
+            </Alert>
+          )}
+
+          {/* =================================================================
+              LOGIN ERROR
+          ================================================================= */}
 
           {serverError && (
             <Alert
               severity="error"
+              onClose={() =>
+                setServerError(
+                  null,
+                )
+              }
             >
               {serverError}
             </Alert>
           )}
+
+          {/* =================================================================
+              LOGIN FORM
+          ================================================================= */}
 
           <Box
             component="form"
@@ -267,10 +391,15 @@ export function LoginPage() {
                 onSubmit,
               )
             }
+            noValidate
           >
             <Stack
               spacing={2.5}
             >
+              {/* =============================================================
+                  USERNAME
+              ============================================================= */}
+
               <Controller
                 name="username"
                 control={
@@ -283,7 +412,11 @@ export function LoginPage() {
                     {...field}
                     label="Username"
                     autoComplete="username"
+                    autoFocus
                     fullWidth
+                    disabled={
+                      isSubmitting
+                    }
                     error={
                       Boolean(
                         errors.username,
@@ -297,6 +430,10 @@ export function LoginPage() {
                   />
                 )}
               />
+
+              {/* =============================================================
+                  PASSWORD
+              ============================================================= */}
 
               <Controller
                 name="password"
@@ -312,6 +449,9 @@ export function LoginPage() {
                     type="password"
                     autoComplete="current-password"
                     fullWidth
+                    disabled={
+                      isSubmitting
+                    }
                     error={
                       Boolean(
                         errors.password,
@@ -326,6 +466,10 @@ export function LoginPage() {
                 )}
               />
 
+              {/* =============================================================
+                  SUBMIT
+              ============================================================= */}
+
               <Button
                 type="submit"
                 variant="contained"
@@ -339,16 +483,28 @@ export function LoginPage() {
                 }}
               >
                 {isSubmitting ? (
-                  <CircularProgress
-                    size={22}
-                    color="inherit"
-                  />
+                  <>
+                    <CircularProgress
+                      size={20}
+                      color="inherit"
+                      sx={{
+                        mr:
+                          1,
+                      }}
+                    />
+
+                    Signing in...
+                  </>
                 ) : (
                   'Sign in'
                 )}
               </Button>
             </Stack>
           </Box>
+
+          {/* =================================================================
+              FOOTER
+          ================================================================= */}
 
           <Typography
             variant="caption"

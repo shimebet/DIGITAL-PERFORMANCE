@@ -7,47 +7,135 @@ export type ScopeType =
 
 export interface UserScope {
   scopeType: ScopeType;
+
+  regionId:
+    string | null;
+
+  regionName?:
+    string | null;
+
+  districtId:
+    string | null;
+
+  districtName?:
+    string | null;
+
+  branchId:
+    string | null;
+
+  branchName?:
+    string | null;
+}
+
+export interface AuthRoleAssignment {
+  roleCode: string;
+  scopeType: ScopeType;
   regionId: string | null;
   districtId: string | null;
   branchId: string | null;
 }
 
 export interface AuthUser {
-  id: string;
-  username: string;
+  roleAssignments?: AuthRoleAssignment[];
+  id:
+    string;
 
-  firstName: string;
-  lastName: string;
+  username:
+    string;
 
-  mustChangePassword: boolean;
+  email:
+    string | null;
 
-  roles: string[];
-  permissions: string[];
-  scopes: UserScope[];
+  phone:
+    string | null;
+
+  firstName:
+    string;
+
+  middleName:
+    string | null;
+
+  lastName:
+    string;
+
+  status?:
+    string;
+
+  employeeNumber?:
+    string | null;
+
+  jobTitle?:
+    string | null;
+
+  mustChangePassword:
+    boolean;
+
+  roles:
+    string[];
+
+  permissions:
+    string[];
+
+  scopes:
+    UserScope[];
 }
 
 export interface LoginRequest {
-  username: string;
-  password: string;
+  username:
+    string;
+
+  password:
+    string;
 }
 
 export interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
-  user: AuthUser;
+  accessToken:
+    string;
+
+  refreshToken:
+    string;
+
+  user:
+    AuthUser;
 }
 
 export interface RefreshRequest {
-  refreshToken: string;
+  refreshToken:
+    string;
 }
 
 export interface RefreshResponse {
-  accessToken: string;
-  refreshToken: string;
-  user: AuthUser;
+  accessToken:
+    string;
+
+  refreshToken:
+    string;
+
+  user:
+    AuthUser;
 }
 
 export interface ChangePasswordRequest {
-  currentPassword: string;
-  newPassword: string;
+  currentPassword:
+    string;
+
+  newPassword:
+    string;
+}
+
+export interface UpdateMyProfileRequest {
+  firstName?:
+    string;
+
+  middleName?:
+    string | null;
+
+  lastName?:
+    string;
+
+  email?:
+    string | null;
+
+  phone?:
+    string | null;
 }
