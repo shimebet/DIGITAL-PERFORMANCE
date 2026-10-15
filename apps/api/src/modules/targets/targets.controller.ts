@@ -8,21 +8,11 @@ import {
   Post,
 } from '@nestjs/common';
 
-import {
-  TargetsService,
-} from './targets.service.js';
+import { TargetsService } from './targets.service.js';
 
-import {
-  CreateTargetDto,
-} from './dto/create-target.dto.js';
-
-import {
-  UpdateTargetDto,
-} from './dto/update-target.dto.js';
-
-import {
-  AssignTargetDto,
-} from './dto/assign-target.dto.js';
+import { CreateTargetDto } from './dto/create-target.dto.js';
+import { UpdateTargetDto } from './dto/update-target.dto.js';
+import { AssignTargetDto } from './dto/assign-target.dto.js';
 
 import {
   Permissions,
@@ -39,9 +29,12 @@ import type {
 @Controller('targets')
 export class TargetsController {
   constructor(
-    private readonly targetsService:
-      TargetsService,
+    private readonly targetsService: TargetsService,
   ) {}
+
+  // ==========================================================================
+  // TARGET DEFINITIONS
+  // ==========================================================================
 
   @Post()
   @Permissions('target.create')
@@ -58,11 +51,14 @@ export class TargetsController {
     );
   }
 
-  @Get()
-  @Permissions('target.read')
-  findAll() {
-    return this.targetsService.findAll();
-  }
+@Get()
+@Permissions('target.read')
+findAll(
+  @CurrentUser()
+  user: AuthenticatedUser,
+) {
+  return this.targetsService.findAll(user);
+}
 
   @Get(':id')
   @Permissions('target.read')
@@ -101,6 +97,10 @@ export class TargetsController {
     );
   }
 
+  // ==========================================================================
+  // TARGET ASSIGNMENTS
+  // ==========================================================================
+
   @Post('assignments')
   @Permissions('target.create')
   assign(
@@ -121,9 +121,13 @@ export class TargetsController {
   findAssignments(
     @Param('id')
     id: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
   ) {
     return this.targetsService.findAssignments(
       id,
+      user,
     );
   }
 
@@ -132,9 +136,13 @@ export class TargetsController {
   removeAssignment(
     @Param('id')
     id: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
   ) {
     return this.targetsService.removeAssignment(
       id,
+      user,
     );
   }
 }

@@ -1,55 +1,48 @@
-import {
-  Test,
-  TestingModule,
-} from '@nestjs/testing';
 
-import {
-  AppController,
-} from './app.controller.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  AppService,
-} from './app.service.js';
+import { AppController } from './app.controller.js';
+import { AppService } from './app.service.js';
 
-describe(
-  'AppController',
-  () => {
-    let appController:
-      AppController;
+describe('AppController', () => {
+  let controller: AppController;
 
-    beforeEach(
-      async () => {
-        const app:
-          TestingModule =
-          await Test.createTestingModule({
-            controllers: [
-              AppController,
-            ],
+  const appServiceMock = {
+    getHealth: vi.fn(),
+  };
 
-            providers: [
-              AppService,
-            ],
-          }).compile();
+  beforeEach(() => {
+    vi.resetAllMocks();
 
-        appController =
-          app.get<AppController>(
-            AppController,
-          );
-      },
+    controller = new AppController(
+      appServiceMock as unknown as AppService,
+    );
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+
+  it('returns the health response from AppService', async () => {
+    const expected = {
+      status: 'ok',
+    };
+
+    appServiceMock.getHealth.mockResolvedValue(expected);
+
+    const result = await controller.getHealth();
+
+    expect(appServiceMock.getHealth).toHaveBeenCalledOnce();
+    expect(result).toEqual(expected);
+  });
+
+  it('propagates health-check errors', async () => {
+    appServiceMock.getHealth.mockRejectedValue(
+      new Error('Health check failed'),
     );
 
-    describe(
-      'health',
-      () => {
-        it(
-          'should be defined',
-          () => {
-            expect(
-              appController,
-            ).toBeDefined();
-          },
-        );
-      },
-    );
-  },
-);
+    await expect(
+      controller.getHealth(),
+    ).rejects.toThrow('Health check failed');
+  });
+});

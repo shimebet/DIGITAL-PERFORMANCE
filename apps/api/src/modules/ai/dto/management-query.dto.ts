@@ -4,7 +4,12 @@ import {
   MaxLength,
 } from 'class-validator';
 
-export class ManagementQueryDto {
+import {
+  AiQueryDto,
+} from './ai-query.dto.js';
+
+export class ManagementQueryDto
+  extends AiQueryDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(500)

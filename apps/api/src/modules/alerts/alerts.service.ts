@@ -26,10 +26,35 @@ export class AlertsService {
     private readonly scopeService: ScopeService,
   ) {}
 
+  // ==========================================================================
+  // LIST ALERTS
+  // ==========================================================================
+
   async findAll(
     query: AlertQueryDto,
     user: AuthenticatedUser,
   ) {
+    if (query.regionId) {
+      await this.scopeService.assertRegionAccess(
+        user,
+        query.regionId,
+      );
+    }
+
+    if (query.districtId) {
+      await this.scopeService.assertDistrictAccess(
+        user,
+        query.districtId,
+      );
+    }
+
+    if (query.branchId) {
+      await this.scopeService.assertBranchAccess(
+        user,
+        query.branchId,
+      );
+    }
+
     const regionIds =
       this.scopeService.getRegionIds(
         user,
@@ -44,6 +69,30 @@ export class AlertsService {
       this.scopeService.getBranchIds(
         user,
       );
+
+    const detectedAtFilter =
+      query.startDate ||
+      query.endDate
+        ? {
+            ...(query.startDate
+              ? {
+                  gte:
+                    new Date(
+                      `${query.startDate}T00:00:00.000`,
+                    ),
+                }
+              : {}),
+
+            ...(query.endDate
+              ? {
+                  lte:
+                    new Date(
+                      `${query.endDate}T23:59:59.999`,
+                    ),
+                }
+              : {}),
+          }
+        : undefined;
 
     return this.prisma.alert.findMany({
       where: {
@@ -79,6 +128,20 @@ export class AlertsService {
           ? {
               branchId:
                 query.branchId,
+            }
+          : {}),
+
+        ...(query.productId
+          ? {
+              productId:
+                query.productId,
+            }
+          : {}),
+
+        ...(detectedAtFilter
+          ? {
+              detectedAt:
+                detectedAtFilter,
             }
           : {}),
 
@@ -129,12 +192,56 @@ export class AlertsService {
           : {}),
       },
 
-      orderBy: {
-        detectedAt:
-          'desc',
+      include: {
+        region:
+          true,
+
+        district:
+          true,
+
+        branch:
+          true,
+
+        product:
+          true,
+
+        recipient: {
+          select: {
+            id:
+              true,
+
+            username:
+              true,
+
+            firstName:
+              true,
+
+            middleName:
+              true,
+
+            lastName:
+              true,
+          },
+        },
       },
+
+      orderBy: [
+        {
+          status:
+            'asc',
+        },
+
+        {
+          detectedAt:
+            'desc',
+        },
+      ],
     });
   }
+
+  // ==========================================================================
+  // GET SINGLE ALERT
+  // ==========================================================================
 
   async findOne(
     id: string,
@@ -149,12 +256,16 @@ export class AlertsService {
         include: {
           region:
             true,
+
           district:
             true,
+
           branch:
             true,
+
           product:
             true,
+
           recipient:
             true,
         },
@@ -176,7 +287,7 @@ export class AlertsService {
 
     if (
       alert.recipientUserId ===
-        user.id
+      user.id
     ) {
       return alert;
     }
@@ -213,6 +324,10 @@ export class AlertsService {
     );
   }
 
+  // ==========================================================================
+  // ACKNOWLEDGE ALERT
+  // ==========================================================================
+
   async acknowledge(
     id: string,
     user: AuthenticatedUser,
@@ -222,7 +337,7 @@ export class AlertsService {
       user,
     );
 
-    return this.prisma.alert.update({
+    await this.prisma.alert.update({
       where: {
         id,
       },
@@ -235,7 +350,16 @@ export class AlertsService {
           new Date(),
       },
     });
+
+    return this.findOne(
+      id,
+      user,
+    );
   }
+
+  // ==========================================================================
+  // RESOLVE ALERT
+  // ==========================================================================
 
   async resolve(
     id: string,
@@ -246,7 +370,7 @@ export class AlertsService {
       user,
     );
 
-    return this.prisma.alert.update({
+    await this.prisma.alert.update({
       where: {
         id,
       },
@@ -259,5 +383,10 @@ export class AlertsService {
           new Date(),
       },
     });
+
+    return this.findOne(
+      id,
+      user,
+    );
   }
 }

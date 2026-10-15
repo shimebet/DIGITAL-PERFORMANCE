@@ -1,5 +1,7 @@
+
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,11 +12,20 @@ import { PrismaService } from '../../database/prisma/prisma.service.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 
+const ADMIN_ROLE_CODES = [
+  'SUPER_ADMIN',
+  'SYSTEM_ADMIN',
+];
+
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
   ) {}
+
+  // ============================================================
+  // CREATE USER
+  // ============================================================
 
   async create(dto: CreateUserDto) {
     const username = dto.username.trim().toLowerCase();
@@ -37,18 +48,7 @@ export class UsersService {
     }
 
     if (dto.branchId) {
-      const branch = await this.prisma.branch.findFirst({
-        where: {
-          id: dto.branchId,
-          deletedAt: null,
-        },
-      });
-
-      if (!branch) {
-        throw new NotFoundException(
-          'Branch not found',
-        );
-      }
+      await this.ensureBranchExists(dto.branchId);
     }
 
     const passwordHash = await argon2.hash(
@@ -73,8 +73,7 @@ export class UsersService {
                   branchId: dto.branchId,
                   employeeNumber:
                     dto.employeeNumber?.trim(),
-                  jobTitle:
-                    dto.jobTitle?.trim(),
+                  jobTitle: dto.jobTitle?.trim(),
                   digitalReskilled:
                     dto.digitalReskilled ?? true,
                 },
@@ -109,6 +108,10 @@ export class UsersService {
       },
     });
   }
+
+  // ============================================================
+  // LIST USERS
+  // ============================================================
 
   async findAll() {
     return this.prisma.user.findMany({
@@ -158,6 +161,10 @@ export class UsersService {
     });
   }
 
+  // ============================================================
+  // GET USER
+  // ============================================================
+
   async findOne(id: string) {
     const user = await this.prisma.user.findFirst({
       where: {
@@ -205,96 +212,420 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        'User not found',
-      );
+      throw new NotFoundException('User not found');
     }
 
     return user;
   }
 
-  async update(
-    id: string,
-    dto: UpdateUserDto,
-  ) {
-    await this.findOne(id);
+  // ============================================================
+  // INTERNAL: BRANCH VALIDATION
+  // ============================================================
 
-    if (dto.branchId) {
-      const branch = await this.prisma.branch.findFirst({
-        where: {
-          id: dto.branchId,
-          deletedAt: null,
-        },
-      });
-
-      if (!branch) {
-        throw new NotFoundException(
-          'Branch not found',
-        );
-      }
-    }
-
-    await this.prisma.user.update({
+  private async ensureBranchExists(branchId: string) {
+    const branch = await this.prisma.branch.findFirst({
       where: {
-        id,
-      },
-
-      data: {
-        email: dto.email
-          ?.trim()
-          .toLowerCase(),
-        phone: dto.phone?.trim(),
-        firstName: dto.firstName?.trim(),
-        middleName: dto.middleName?.trim(),
-        lastName: dto.lastName?.trim(),
-        status: dto.status,
+        id: branchId,
+        deletedAt: null,
       },
     });
 
-    if (dto.branchId) {
-      await this.prisma.staffProfile.upsert({
+    if (!branch) {
+      throw new NotFoundException('Branch not found');
+    }
+  }
+
+  // ============================================================
+  // INTERNAL: PROTECT LAST GLOBAL ADMIN
+  // Call inside the same transaction as the change.
+  // ============================================================
+
+  private async protectLastGlobalAdmin(
+    tx: Parameters<
+      Parameters<PrismaService['$transaction']>[0]
+    >[0],
+    userId: string,
+  ) {
+    const globalAdminAssignment =
+      await tx.userRole.findFirst({
         where: {
-          userId: id,
-        },
-
-        update: {
-          branchId: dto.branchId,
-          employeeNumber:
-            dto.employeeNumber?.trim(),
-          jobTitle: dto.jobTitle?.trim(),
-        },
-
-        create: {
-          userId: id,
-          branchId: dto.branchId,
-          employeeNumber:
-            dto.employeeNumber?.trim(),
-          jobTitle: dto.jobTitle?.trim(),
+          userId,
+          scopeType: 'GLOBAL',
+          role: {
+            code: {
+              in: ADMIN_ROLE_CODES,
+            },
+            status: 'ACTIVE',
+          },
         },
       });
+
+    if (!globalAdminAssignment) {
+      return;
     }
+
+    const otherActiveAdmins = await tx.user.count({
+      where: {
+        id: {
+          not: userId,
+        },
+        status: 'ACTIVE',
+        deletedAt: null,
+        roles: {
+          some: {
+            scopeType: 'GLOBAL',
+            role: {
+              code: {
+                in: ADMIN_ROLE_CODES,
+              },
+              status: 'ACTIVE',
+            },
+          },
+        },
+      },
+    });
+
+    if (otherActiveAdmins === 0) {
+      throw new ForbiddenException(
+        'Cannot disable or delete the last active global administrator',
+      );
+    }
+  }
+
+  // ============================================================
+  // INTERNAL: REVOKE SESSIONS
+  // ============================================================
+
+  private async revokeUserSessions(
+    tx: Parameters<
+      Parameters<PrismaService['$transaction']>[0]
+    >[0],
+    userId: string,
+    now: Date,
+  ) {
+    await tx.refreshToken.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: now,
+      },
+    });
+
+    await tx.userSession.updateMany({
+      where: {
+        userId,
+        status: 'ACTIVE',
+      },
+      data: {
+        status: 'REVOKED',
+        revokedAt: now,
+      },
+    });
+  }
+
+  // ============================================================
+  // UPDATE USER
+  // ============================================================
+
+  async update(
+    id: string,
+    dto: UpdateUserDto,
+    actorId?: string,
+  ) {
+    if (dto.branchId) {
+      await this.ensureBranchExists(dto.branchId);
+    }
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.user.findFirst({
+          where: {
+            id,
+            deletedAt: null,
+          },
+        });
+
+        if (!existing) {
+          throw new NotFoundException('User not found');
+        }
+
+        const statusChanged =
+          dto.status !== undefined &&
+          dto.status !== existing.status;
+
+        const restrictingAccess =
+          statusChanged &&
+          dto.status !== 'ACTIVE';
+
+        if (restrictingAccess) {
+          if (actorId === id) {
+            throw new ForbiddenException(
+              'You cannot deactivate, lock, or suspend your own account',
+            );
+          }
+
+          if (existing.status === 'ACTIVE') {
+            await this.protectLastGlobalAdmin(tx, id);
+          }
+        }
+
+        await tx.user.update({
+          where: {
+            id,
+          },
+          data: {
+            email:
+              dto.email?.trim().toLowerCase(),
+            phone:
+              dto.phone?.trim(),
+            firstName:
+              dto.firstName?.trim(),
+            middleName:
+              dto.middleName?.trim(),
+            lastName:
+              dto.lastName?.trim(),
+            status:
+              dto.status,
+
+            ...(dto.status === 'ACTIVE'
+              ? {
+                  failedLoginAttempts: 0,
+                  lockedUntil: null,
+                }
+              : {}),
+          },
+        });
+
+        if (dto.branchId) {
+          await tx.staffProfile.upsert({
+            where: {
+              userId: id,
+            },
+            update: {
+              branchId: dto.branchId,
+              employeeNumber:
+                dto.employeeNumber?.trim(),
+              jobTitle:
+                dto.jobTitle?.trim(),
+            },
+            create: {
+              userId: id,
+              branchId: dto.branchId,
+              employeeNumber:
+                dto.employeeNumber?.trim(),
+              jobTitle:
+                dto.jobTitle?.trim(),
+            },
+          });
+        }
+
+        if (restrictingAccess) {
+          await this.revokeUserSessions(
+            tx,
+            id,
+            new Date(),
+          );
+        }
+
+        await tx.auditLog.create({
+          data: {
+            userId: actorId ?? null,
+            action: 'UPDATE',
+            module: 'USERS',
+            entityType: 'User',
+            entityId: id,
+            description: statusChanged
+              ? `User account status changed from ${existing.status} to ${dto.status}`
+              : 'User account profile updated',
+            oldValue: {
+              status: existing.status,
+            },
+            newValue: {
+              status: dto.status ?? existing.status,
+            },
+          },
+        });
+      },
+      {
+        isolationLevel: 'Serializable',
+      },
+    );
 
     return this.findOne(id);
   }
 
-  async softDelete(id: string) {
-    await this.findOne(id);
+  // ============================================================
+  // SOFT DELETE USER
+  // ============================================================
 
-    return this.prisma.user.update({
-      where: {
-        id,
-      },
+  async softDelete(
+    id: string,
+    actorId?: string,
+  ) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.user.findFirst({
+          where: {
+            id,
+            deletedAt: null,
+          },
+        });
 
-      data: {
-        deletedAt: new Date(),
-        status: 'INACTIVE',
+        if (!existing) {
+          throw new NotFoundException('User not found');
+        }
+
+        if (actorId === id) {
+          throw new ForbiddenException(
+            'You cannot delete your own account',
+          );
+        }
+
+        if (existing.status === 'ACTIVE') {
+          await this.protectLastGlobalAdmin(tx, id);
+        }
+
+        const now = new Date();
+
+        await tx.user.update({
+          where: {
+            id,
+          },
+          data: {
+            deletedAt: now,
+            status: 'INACTIVE',
+          },
+        });
+
+        await this.revokeUserSessions(
+          tx,
+          id,
+          now,
+        );
+
+        await tx.auditLog.create({
+          data: {
+            userId: actorId ?? null,
+            action: 'DELETE',
+            module: 'USERS',
+            entityType: 'User',
+            entityId: id,
+            description: 'User account soft deleted',
+            oldValue: {
+              status: existing.status,
+              deleted: false,
+            },
+            newValue: {
+              status: 'INACTIVE',
+              deleted: true,
+            },
+          },
+        });
+
+        return {
+          success: true,
+          message: 'User deleted successfully',
+        };
       },
-    });
+      {
+        isolationLevel: 'Serializable',
+      },
+    );
   }
 
-  async findByUsername(
-    username: string,
+  // ============================================================
+  // ADMINISTRATOR PASSWORD RESET
+  // ============================================================
+
+  async resetPassword(
+    id: string,
+    temporaryPassword: string,
+    actorId: string,
   ) {
+    if (actorId === id) {
+      throw new ForbiddenException(
+        'Use the change-password endpoint to update your own password',
+      );
+    }
+
+    if (
+      temporaryPassword.length < 12 ||
+      temporaryPassword.length > 128
+    ) {
+      throw new ConflictException(
+        'Temporary password must contain 12 to 128 characters',
+      );
+    }
+
+    const passwordHash = await argon2.hash(
+      temporaryPassword,
+    );
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.user.findFirst({
+          where: {
+            id,
+            deletedAt: null,
+          },
+        });
+
+        if (!existing) {
+          throw new NotFoundException('User not found');
+        }
+
+        const now = new Date();
+
+        await tx.user.update({
+          where: {
+            id,
+          },
+          data: {
+            passwordHash,
+            mustChangePassword: true,
+            passwordChangedAt: now,
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+          },
+        });
+
+        await this.revokeUserSessions(
+          tx,
+          id,
+          now,
+        );
+
+        await tx.auditLog.create({
+          data: {
+            userId: actorId,
+            action: 'PASSWORD_CHANGED',
+            module: 'USERS',
+            entityType: 'User',
+            entityId: id,
+            description:
+              'Administrator reset user password',
+          },
+        });
+
+        return {
+          success: true,
+          message:
+            'Password reset successfully. User must change password at next login.',
+        };
+      },
+      {
+        isolationLevel: 'Serializable',
+      },
+    );
+  }
+
+  // ============================================================
+  // AUTHENTICATION LOOKUP
+  // ============================================================
+
+  async findByUsername(username: string) {
     return this.prisma.user.findUnique({
       where: {
         username:

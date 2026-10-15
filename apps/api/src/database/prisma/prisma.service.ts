@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 
 import { ConfigService } from '@nestjs/config';
 
@@ -15,42 +11,28 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
-  constructor(
-    configService: ConfigService,
-  ) {
-    const host =
-      configService.getOrThrow<string>(
-        'DATABASE_HOST',
-      );
+  constructor(configService: ConfigService) {
+    // ==========================================================================
+    // DATABASE CONFIGURATION
+    // ==========================================================================
 
-    const port = Number(
-      configService.get<string>(
-        'DATABASE_PORT',
-        '3306',
-      ),
-    );
+    const host = configService.getOrThrow<string>('DATABASE_HOST');
 
-    const user =
-      configService.getOrThrow<string>(
-        'DATABASE_USER',
-      );
+    const port = Number(configService.get<string>('DATABASE_PORT', '3306'));
 
-    const password =
-      configService.getOrThrow<string>(
-        'DATABASE_PASSWORD',
-      );
+    const user = configService.getOrThrow<string>('DATABASE_USER');
 
-    const database =
-      configService.getOrThrow<string>(
-        'DATABASE_NAME',
-      );
+    const password = configService.getOrThrow<string>('DATABASE_PASSWORD');
+
+    const database = configService.getOrThrow<string>('DATABASE_NAME');
 
     const connectionLimit = Number(
-      configService.get<string>(
-        'DATABASE_CONNECTION_LIMIT',
-        '10',
-      ),
+      configService.get<string>('DATABASE_CONNECTION_LIMIT', '10'),
     );
+
+    // ==========================================================================
+    // PRISMA DRIVER ADAPTER
+    // ==========================================================================
 
     const adapter = new PrismaMariaDb({
       host,
@@ -66,9 +48,38 @@ export class PrismaService
     });
   }
 
+  // ==========================================================================
+  // MODULE INIT
+  // ==========================================================================
+
   async onModuleInit() {
     await this.$connect();
+
+    // ------------------------------------------------------------------------
+    // DEVELOPMENT DATABASE DIAGNOSTIC
+    //
+    // This confirms which MySQL database the running Nest application is
+    // actually connected to.
+    // ------------------------------------------------------------------------
+
+    try {
+      const databaseResult = await this.$queryRaw<
+        Array<{
+          databaseName: string | null;
+        }>
+      >`
+          SELECT DATABASE() AS databaseName
+        `;
+
+      console.log('Prisma connected database:', databaseResult);
+    } catch (error) {
+      console.error('Unable to verify Prisma database connection:', error);
+    }
   }
+
+  // ==========================================================================
+  // MODULE DESTROY
+  // ==========================================================================
 
   async onModuleDestroy() {
     await this.$disconnect();

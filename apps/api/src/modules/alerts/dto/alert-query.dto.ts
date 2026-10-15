@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsEnum,
   IsOptional,
   IsUUID,
@@ -29,4 +30,16 @@ export class AlertQueryDto {
   @IsOptional()
   @IsUUID()
   branchId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  productId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
 }

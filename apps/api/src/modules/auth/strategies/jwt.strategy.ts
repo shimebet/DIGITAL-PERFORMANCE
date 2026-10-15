@@ -1,27 +1,23 @@
+
 import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 
-import {
-  ConfigService,
-} from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 
-import {
-  PassportStrategy,
-} from '@nestjs/passport';
+import { PassportStrategy } from '@nestjs/passport';
 
 import {
   ExtractJwt,
   Strategy,
 } from 'passport-jwt';
 
-import {
-  PrismaService,
-} from '../../../database/prisma/prisma.service.js';
+import { PrismaService } from '../../../database/prisma/prisma.service.js';
 
 import type {
   AuthenticatedUser,
+  AuthenticatedUserRoleAssignment,
 } from '../interfaces/authenticated-user.interface.js';
 
 interface JwtPayload {
@@ -35,18 +31,15 @@ export class JwtStrategy extends PassportStrategy(
   'jwt',
 ) {
   constructor(
-    configService:
-      ConfigService,
+    configService: ConfigService,
 
-    private readonly prisma:
-      PrismaService,
+    private readonly prisma: PrismaService,
   ) {
     super({
       jwtFromRequest:
         ExtractJwt.fromAuthHeaderAsBearerToken(),
 
-      ignoreExpiration:
-        false,
+      ignoreExpiration: false,
 
       secretOrKey:
         configService.getOrThrow<string>(
@@ -58,28 +51,29 @@ export class JwtStrategy extends PassportStrategy(
   async validate(
     payload: JwtPayload,
   ): Promise<AuthenticatedUser> {
-    const user =
-      await this.prisma.user.findFirst({
-        where: {
-          id:
-            payload.sub,
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: payload.sub,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
 
-          status:
-            'ACTIVE',
-
-          deletedAt:
-            null,
-        },
-
-        include: {
-          roles: {
-            include: {
-              role:
-                true,
+      include: {
+        roles: {
+          include: {
+            role: {
+              include: {
+                rolePermissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+              },
             },
           },
         },
-      });
+      },
+    });
 
     if (!user) {
       throw new UnauthorizedException(
@@ -87,58 +81,80 @@ export class JwtStrategy extends PassportStrategy(
       );
     }
 
-    const roleCodes =
-      user.roles.map(
-        (item) =>
-          item.role.code,
-      );
+    const activeAssignments = user.roles.filter(
+      (item) => item.role.status === 'ACTIVE',
+    );
 
-    const scopes =
-      user.roles.map(
-        (item) => ({
-          scopeType:
-            item.scopeType,
+    const roleAssignments:
+      AuthenticatedUserRoleAssignment[] =
+      activeAssignments.map((item) => ({
+        roleCode: item.role.code,
 
-          regionId:
-            item.regionId,
+        scopeType: item.scopeType,
 
-          districtId:
-            item.districtId,
+        regionId: item.regionId,
 
-          branchId:
-            item.branchId,
-        }),
-      );
+        districtId: item.districtId,
 
-    /*
-     * If permissions are already derived elsewhere in your
-     * authentication service, use that logic here.
-     *
-     * For now this assumes Role has a permissions relation.
-     */
+        branchId: item.branchId,
+      }));
 
-    const authenticatedUser:
-      AuthenticatedUser = {
-        id:
-          user.id,
+    const roles = [
+      ...new Set(
+        roleAssignments.map(
+          (assignment) => assignment.roleCode,
+        ),
+      ),
+    ];
 
-        username:
-          user.username,
+    const permissions = [
+      ...new Set(
+        activeAssignments.flatMap((item) =>
+          item.role.rolePermissions
+            .filter(
+              (rolePermission) =>
+                rolePermission.permission.status ===
+                'ACTIVE',
+            )
+            .map(
+              (rolePermission) =>
+                rolePermission.permission.code,
+            ),
+        ),
+      ),
+    ];
 
-        firstName:
-          user.firstName,
+    const scopes = roleAssignments.map(
+      ({
+        scopeType,
+        regionId,
+        districtId,
+        branchId,
+      }) => ({
+        scopeType,
+        regionId,
+        districtId,
+        branchId,
+      }),
+    );
 
-        lastName:
-          user.lastName,
+    const authenticatedUser: AuthenticatedUser = {
+      id: user.id,
 
-        roles:
-          roleCodes,
+      username: user.username,
 
-        permissions:
-          [],
+      firstName: user.firstName,
 
-        scopes,
-      };
+      lastName: user.lastName,
+
+      roles,
+
+      permissions,
+
+      scopes,
+
+      roleAssignments,
+    };
 
     return authenticatedUser;
   }

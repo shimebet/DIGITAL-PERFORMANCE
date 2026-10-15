@@ -4,29 +4,24 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-
 import {
   PrismaService,
 } from '../../database/prisma/prisma.service.js';
-
 import type {
   AuthenticatedUser,
 } from '../auth/interfaces/authenticated-user.interface.js';
-
 import {
   CreateActivityDto,
 } from './dto/create-activity.dto.js';
-
 import {
   UpdateActivityDto,
 } from './dto/update-activity.dto.js';
-
+import { lockStaffActivity } from '../../database/prisma/staff-activity-lock.js';
 @Injectable()
 export class ActivitiesService {
   constructor(
     private readonly prisma: PrismaService,
   ) {}
-
   private async getStaffContext(
     user: AuthenticatedUser,
   ) {
@@ -37,7 +32,6 @@ export class ActivitiesService {
           deletedAt: null,
           status: 'ACTIVE',
         },
-
         include: {
           staffProfile: {
             include: {
@@ -54,22 +48,18 @@ export class ActivitiesService {
           },
         },
       });
-
     if (!staff) {
       throw new NotFoundException(
         'User not found',
       );
     }
-
     if (!staff.staffProfile) {
       throw new BadRequestException(
         'User is not assigned to a branch staff profile',
       );
     }
-
     return staff;
   }
-
   private validateTotals(
     dto:
       | CreateActivityDto
@@ -85,7 +75,6 @@ export class ActivitiesService {
         'Customers educated cannot exceed customers contacted',
       );
     }
-
     if (
       dto.activations !== undefined &&
       dto.customersEducated !== undefined &&
@@ -96,7 +85,6 @@ export class ActivitiesService {
         'Activations cannot exceed customers educated',
       );
     }
-
     if (
       dto.transactions !== undefined &&
       dto.activations !== undefined &&
@@ -108,52 +96,24 @@ export class ActivitiesService {
       );
     }
   }
-
   async create(
     dto: CreateActivityDto,
     user: AuthenticatedUser,
   ) {
     this.validateTotals(dto);
-
     const staff =
       await this.getStaffContext(
         user,
       );
-
     const activityDate =
       new Date(
         dto.activityDate,
       );
-
-    const submission =
-      await this.prisma.dailySubmission.findFirst({
-        where: {
-          staffId: user.id,
-          branchId:
-            staff.staffProfile!.branchId,
-          submissionDate:
-            activityDate,
-        },
-      });
-
-    if (
-      submission &&
-      submission.status !==
-        'DRAFT' &&
-      submission.status !==
-        'RETURNED_FOR_CORRECTION'
-    ) {
-      throw new ForbiddenException(
-        'Activities cannot be modified after submission',
-      );
-    }
-
     const productIds =
       dto.products.map(
         (item) =>
           item.productId,
       );
-
     const products =
       await this.prisma.product.findMany({
         where: {
@@ -167,7 +127,6 @@ export class ActivitiesService {
             null,
         },
       });
-
     if (
       products.length !==
       new Set(productIds).size
@@ -176,52 +135,56 @@ export class ActivitiesService {
         'One or more products are invalid or inactive',
       );
     }
-
     return this.prisma.$transaction(
       async (tx) => {
-        const activity =
-          await tx.activity.create({
+        // Coordinate changes for this staff member within the transaction.
+        await lockStaffActivity(tx, user.id);
+        // Read submission status only after acquiring the staff lock.
+        const submission = await tx.dailySubmission.findFirst({
+          where: {
+            staffId: user.id,
+            branchId: staff.staffProfile!.branchId,
+            submissionDate: activityDate,
+          },
+        });
+        if (
+          submission &&
+          submission.status !== 'DRAFT' &&
+          submission.status !== 'RETURNED_FOR_CORRECTION'
+        ) {
+          throw new ForbiddenException(
+            'Activities cannot be modified after submission',
+          );
+        }
+        const activity = await tx.activity.create({
             data: {
               staffId:
                 user.id,
-
               branchId:
                 staff.staffProfile!.branchId,
-
               activityDate,
-
               customerVisits:
                 dto.customerVisits,
-
               phoneCalls:
                 dto.phoneCalls,
-
               customersContacted:
                 dto.customersContacted,
-
               customersEducated:
                 dto.customersEducated,
-
               activations:
                 dto.activations,
-
               reactivations:
                 dto.reactivations,
-
               transactions:
                 dto.transactions,
-
               remarks:
                 dto.remarks?.trim(),
-
               challenges:
                 dto.challenges?.trim(),
-
               submissionId:
                 submission?.id,
             },
           });
-
         for (
           const product
           of dto.products
@@ -230,38 +193,29 @@ export class ActivitiesService {
             data: {
               activityId:
                 activity.id,
-
               productId:
                 product.productId,
-
               customersEngaged:
                 product.customersEngaged,
-
               activations:
                 product.activations,
-
               reactivations:
                 product.reactivations,
-
               transactions:
                 product.transactions,
-
               failedActivations:
                 product.failedActivations ??
                 0,
-
               remarks:
                 product.remarks?.trim(),
             },
           });
         }
-
         return tx.activity.findUnique({
           where: {
             id:
               activity.id,
           },
-
           include: {
             products: {
               include: {
@@ -274,7 +228,6 @@ export class ActivitiesService {
       },
     );
   }
-
   async findMine(
     user: AuthenticatedUser,
   ) {
@@ -283,26 +236,27 @@ export class ActivitiesService {
         staffId:
           user.id,
       },
-
-      include: {
-        branch:
-          true,
-
-        products: {
-          include: {
-            product:
-              true,
-          },
-        },
-      },
-
+ include: {
+  branch: true,
+  submission: {
+    select: {
+      id: true,
+      status: true,
+      submissionDate: true,
+    },
+  },
+  products: {
+    include: {
+      product: true,
+    },
+  },
+},
       orderBy: {
         activityDate:
           'desc',
       },
     });
   }
-
   async findOne(
     id: string,
     user: AuthenticatedUser,
@@ -312,7 +266,6 @@ export class ActivitiesService {
         where: {
           id,
         },
-
         include: {
           branch: {
             include: {
@@ -324,25 +277,21 @@ export class ActivitiesService {
               },
             },
           },
-
           products: {
             include: {
               product:
                 true,
             },
           },
-
           submission:
             true,
         },
       });
-
     if (!activity) {
       throw new NotFoundException(
         'Activity not found',
       );
     }
-
     if (
       !user.roles.includes(
         'SUPER_ADMIN',
@@ -358,7 +307,6 @@ export class ActivitiesService {
             scope.branchId ===
               activity.branchId,
         );
-
       const allowedDistrict =
         user.scopes.some(
           (scope) =>
@@ -367,7 +315,6 @@ export class ActivitiesService {
             scope.districtId ===
               activity.branch.districtId,
         );
-
       const allowedRegion =
         user.scopes.some(
           (scope) =>
@@ -376,14 +323,12 @@ export class ActivitiesService {
             scope.regionId ===
               activity.branch.district.regionId,
         );
-
       const global =
         user.scopes.some(
           (scope) =>
             scope.scopeType ===
               'GLOBAL',
         );
-
       if (
         !allowedBranch &&
         !allowedDistrict &&
@@ -395,142 +340,84 @@ export class ActivitiesService {
         );
       }
     }
-
     return activity;
   }
-
   async update(
     id: string,
     dto: UpdateActivityDto,
     user: AuthenticatedUser,
   ) {
-    this.validateTotals(dto);
-
-    const activity =
-      await this.findOne(
-        id,
-        user,
-      );
-
-    if (
-      activity.staffId !==
-        user.id &&
-      !user.roles.includes(
-        'SUPER_ADMIN',
-      )
-    ) {
-      throw new ForbiddenException(
-        'Only the activity owner can edit this record',
-      );
+    // Keep the original scope/ownership authorization before the transaction.
+    const activity = await this.findOne(id, user);
+    if (activity.staffId !== user.id && !user.roles.includes('SUPER_ADMIN')) {
+      throw new ForbiddenException('Only the activity owner can edit this record');
     }
-
-    if (
-      activity.submission &&
-      activity.submission.status !==
-        'DRAFT' &&
-      activity.submission.status !==
-        'RETURNED_FOR_CORRECTION'
-    ) {
-      throw new ForbiddenException(
-        'Activity cannot be changed after submission',
-      );
-    }
-
-    return this.prisma.$transaction(
-      async (tx) => {
-        await tx.activity.update({
-          where: {
-            id,
-          },
-
-          data: {
-            customerVisits:
-              dto.customerVisits,
-
-            phoneCalls:
-              dto.phoneCalls,
-
-            customersContacted:
-              dto.customersContacted,
-
-            customersEducated:
-              dto.customersEducated,
-
-            activations:
-              dto.activations,
-
-            reactivations:
-              dto.reactivations,
-
-            transactions:
-              dto.transactions,
-
-            remarks:
-              dto.remarks?.trim(),
-
-            challenges:
-              dto.challenges?.trim(),
-          },
-        });
-
-        if (dto.products) {
-          await tx.activityProduct.deleteMany({
-            where: {
-              activityId:
-                id,
+    return this.prisma.$transaction(async (tx) => {
+      // Lock order across the platform: staff row, then submission row if needed.
+      await lockStaffActivity(tx, activity.staffId);
+      // Reload after the lock: the original findOne result may now be stale.
+      const current = await tx.activity.findUnique({
+        where: { id },
+        include: { submission: true },
+      });
+      if (!current) {
+        throw new NotFoundException('Activity not found');
+      }
+      if (current.staffId !== activity.staffId ||
+          (current.staffId !== user.id && !user.roles.includes('SUPER_ADMIN'))) {
+        throw new ForbiddenException('Only the activity owner can edit this record');
+      }
+      // Fail closed if a submissionId is set but the relation is unavailable.
+      if (current.submissionId && !current.submission) {
+        throw new ForbiddenException('Activity submission status cannot be verified');
+      }
+      if (current.submission &&
+          current.submission.status !== 'DRAFT' &&
+          current.submission.status !== 'RETURNED_FOR_CORRECTION') {
+        throw new ForbiddenException('Activity cannot be changed after submission');
+      }
+      // Validate the final totals, including values omitted from a partial update.
+      this.validateTotals({
+        customersContacted: dto.customersContacted ?? current.customersContacted,
+        customersEducated: dto.customersEducated ?? current.customersEducated,
+        activations: dto.activations ?? current.activations,
+        transactions: dto.transactions ?? current.transactions,
+      } as UpdateActivityDto);
+      await tx.activity.update({
+        where: { id },
+        data: {
+          customerVisits: dto.customerVisits,
+          phoneCalls: dto.phoneCalls,
+          customersContacted: dto.customersContacted,
+          customersEducated: dto.customersEducated,
+          activations: dto.activations,
+          reactivations: dto.reactivations,
+          transactions: dto.transactions,
+          remarks: dto.remarks?.trim(),
+          challenges: dto.challenges?.trim(),
+        },
+      });
+      if (dto.products) {
+        await tx.activityProduct.deleteMany({ where: { activityId: id } });
+        for (const product of dto.products) {
+          await tx.activityProduct.create({
+            data: {
+              activityId: id,
+              productId: product.productId,
+              customersEngaged: product.customersEngaged,
+              activations: product.activations,
+              reactivations: product.reactivations,
+              transactions: product.transactions,
+              failedActivations: product.failedActivations ?? 0,
+              remarks: product.remarks?.trim(),
             },
           });
-
-          for (
-            const product
-            of dto.products
-          ) {
-            await tx.activityProduct.create({
-              data: {
-                activityId:
-                  id,
-
-                productId:
-                  product.productId,
-
-                customersEngaged:
-                  product.customersEngaged,
-
-                activations:
-                  product.activations,
-
-                reactivations:
-                  product.reactivations,
-
-                transactions:
-                  product.transactions,
-
-                failedActivations:
-                  product.failedActivations ??
-                  0,
-
-                remarks:
-                  product.remarks?.trim(),
-              },
-            });
-          }
         }
-
-        return tx.activity.findUnique({
-          where: {
-            id,
-          },
-
-          include: {
-            products: {
-              include: {
-                product:
-                  true,
-              },
-            },
-          },
-        });
-      },
-    );
+      }
+      return tx.activity.findUnique({
+        where: { id },
+        include: { products: { include: { product: true } } },
+      });
+    });
   }
 }

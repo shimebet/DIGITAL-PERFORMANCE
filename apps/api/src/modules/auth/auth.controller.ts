@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
 } from '@nestjs/common';
 
@@ -22,6 +23,10 @@ import {
 } from './dto/change-password.dto.js';
 
 import {
+  UpdateMyProfileDto,
+} from './dto/update-my-profile.dto.js';
+
+import {
   Public,
 } from './decorators/public.decorator.js';
 
@@ -40,6 +45,10 @@ export class AuthController {
       AuthService,
   ) {}
 
+  // ==========================================================================
+  // LOGIN
+  // ==========================================================================
+
   @Public()
   @Post('login')
   login(
@@ -52,6 +61,10 @@ export class AuthController {
     );
   }
 
+  // ==========================================================================
+  // REFRESH TOKEN
+  // ==========================================================================
+
   @Public()
   @Post('refresh')
   refresh(
@@ -63,6 +76,10 @@ export class AuthController {
     );
   }
 
+  // ==========================================================================
+  // LOGOUT
+  // ==========================================================================
+
   @Post('logout')
   logout(
     @CurrentUser()
@@ -72,7 +89,10 @@ export class AuthController {
       user.id,
     );
   }
-  
+
+  // ==========================================================================
+  // CHANGE PASSWORD
+  // ==========================================================================
 
   @Post('change-password')
   changePassword(
@@ -89,6 +109,10 @@ export class AuthController {
     );
   }
 
+  // ==========================================================================
+  // CURRENT USER
+  // ==========================================================================
+
   @Get('me')
   me(
     @CurrentUser()
@@ -96,6 +120,24 @@ export class AuthController {
   ) {
     return this.authService.me(
       user.id,
+    );
+  }
+
+  // ==========================================================================
+  // UPDATE CURRENT USER PROFILE
+  // ==========================================================================
+
+  @Patch('me')
+  updateMyProfile(
+    @CurrentUser()
+    user: AuthenticatedUser,
+
+    @Body()
+    dto: UpdateMyProfileDto,
+  ) {
+    return this.authService.updateMyProfile(
+      user.id,
+      dto,
     );
   }
 }

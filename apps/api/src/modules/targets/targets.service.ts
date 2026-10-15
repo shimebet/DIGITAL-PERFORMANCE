@@ -33,6 +33,7 @@ import {
 export class TargetsService {
   constructor(
     private readonly prisma: PrismaService,
+
     private readonly scopeService: ScopeService,
   ) {}
 
@@ -45,12 +46,19 @@ export class TargetsService {
     user: AuthenticatedUser,
   ) {
     const startDate =
-      new Date(dto.startDate);
+      new Date(
+        dto.startDate,
+      );
 
     const endDate =
-      new Date(dto.endDate);
+      new Date(
+        dto.endDate,
+      );
 
-    if (endDate < startDate) {
+    if (
+      endDate <
+      startDate
+    ) {
       throw new BadRequestException(
         'endDate must be greater than or equal to startDate',
       );
@@ -87,51 +95,97 @@ export class TargetsService {
   // FIND ALL TARGETS
   // ==========================================================================
 
-  async findAll() {
-    return this.prisma.target.findMany({
-      where: {
-        deletedAt:
-          null,
-      },
+  // ==========================================================================
+// FIND ALL TARGETS
+// ==========================================================================
 
-      include: {
-        createdBy: {
-          select: {
-            id:
-              true,
+async findAll(
+  currentUser: AuthenticatedUser,
+) {
+  const targets = await this.prisma.target.findMany({
+    where: {
+      deletedAt: null,
+    },
 
-            username:
-              true,
-
-            firstName:
-              true,
-
-            lastName:
-              true,
-          },
-        },
-
-        _count: {
-          select: {
-            assignments:
-              true,
-          },
+    include: {
+      createdBy: {
+        select: {
+          id: true,
+          username: true,
+          firstName: true,
+          lastName: true,
         },
       },
+    },
 
-      orderBy: [
-        {
-          startDate:
-            'desc',
-        },
+    orderBy: [
+      {
+        startDate: 'desc',
+      },
+      {
+        name: 'asc',
+      },
+    ],
+  });
 
-        {
-          name:
-            'asc',
-        },
-      ],
-    });
+  // Global users can see the true assignment count.
+  if (this.scopeService.isGlobal(currentUser)) {
+    const targetIds = targets.map((target) => target.id);
+
+    const counts =
+      targetIds.length > 0
+        ? await this.prisma.targetAssignment.groupBy({
+            by: ['targetId'],
+            where: {
+              targetId: {
+                in: targetIds,
+              },
+            },
+            _count: {
+              _all: true,
+            },
+          })
+        : [];
+
+    const countByTargetId = new Map(
+      counts.map((item) => [
+        item.targetId,
+        item._count._all,
+      ]),
+    );
+
+    return targets.map((target) => ({
+      ...target,
+      _count: {
+        assignments:
+          countByTargetId.get(target.id) ?? 0,
+      },
+    }));
   }
+
+  // For scoped users, use the same authorization rules already used by
+  // findAssignments(). This prevents out-of-scope assignment counts from
+  // leaking through the target list.
+  const targetsWithScopedCounts = await Promise.all(
+    targets.map(async (target) => {
+      const visibleAssignments =
+        await this.findAssignments(
+          target.id,
+          currentUser,
+        );
+
+      return {
+        ...target,
+        _count: {
+          assignments:
+            visibleAssignments.length,
+        },
+      };
+    }),
+  );
+
+  return targetsWithScopedCounts;
+}
 
   // ==========================================================================
   // FIND ONE TARGET
@@ -200,7 +254,9 @@ export class TargetsService {
         },
       });
 
-    if (!target) {
+    if (
+      !target
+    ) {
       throw new NotFoundException(
         'Target not found',
       );
@@ -218,19 +274,28 @@ export class TargetsService {
     dto: UpdateTargetDto,
   ) {
     const target =
-      await this.findOne(id);
+      await this.findOne(
+        id,
+      );
 
     const startDate =
       dto.startDate
-        ? new Date(dto.startDate)
+        ? new Date(
+            dto.startDate,
+          )
         : target.startDate;
 
     const endDate =
       dto.endDate
-        ? new Date(dto.endDate)
+        ? new Date(
+            dto.endDate,
+          )
         : target.endDate;
 
-    if (endDate < startDate) {
+    if (
+      endDate <
+      startDate
+    ) {
       throw new BadRequestException(
         'endDate must be greater than or equal to startDate',
       );
@@ -280,7 +345,9 @@ export class TargetsService {
   async remove(
     id: string,
   ) {
-    await this.findOne(id);
+    await this.findOne(
+      id,
+    );
 
     return this.prisma.target.update({
       where: {
@@ -305,6 +372,105 @@ export class TargetsService {
     dto: AssignTargetDto,
     currentUser: AuthenticatedUser,
   ) {
+    // =========================================================================
+    // TEMPORARY DIAGNOSTICS
+    //
+    // These logs are only for troubleshooting the current Target not found
+    // problem. Remove them after the issue is confirmed and corrected.
+    // =========================================================================
+
+    console.log(
+      'Target assignment request:',
+      {
+        targetId:
+          dto.targetId,
+
+        scopeType:
+          dto.scopeType,
+
+        userId:
+          dto.userId,
+
+        productId:
+          dto.productId,
+
+        targetValue:
+          dto.targetValue,
+      },
+    );
+
+    const currentDatabase =
+      await this.prisma.$queryRaw<
+        Array<{
+          databaseName:
+            string | null;
+        }>
+      >`
+        SELECT DATABASE() AS databaseName
+      `;
+
+    console.log(
+      'Target assignment database:',
+      currentDatabase,
+    );
+
+    // -------------------------------------------------------------------------
+    // RAW DATABASE CHECK
+    //
+    // This checks the physical targets table using the same Prisma connection.
+    // -------------------------------------------------------------------------
+
+    const rawDatabaseTarget =
+      await this.prisma.$queryRaw<
+        Array<{
+          id:
+            string;
+
+          name:
+            string;
+
+          status:
+            string;
+
+          deletedAt:
+            Date | null;
+        }>
+      >`
+        SELECT
+          id,
+          name,
+          status,
+          deletedAt
+        FROM targets
+        WHERE id = ${dto.targetId}
+      `;
+
+    console.log(
+      'Raw database target:',
+      rawDatabaseTarget,
+    );
+
+    // -------------------------------------------------------------------------
+    // PRISMA ID-ONLY CHECK
+    // -------------------------------------------------------------------------
+
+    const rawPrismaTarget =
+      await this.prisma.target.findUnique({
+        where: {
+          id:
+            dto.targetId,
+        },
+      });
+
+    console.log(
+      'Prisma target by ID:',
+      rawPrismaTarget,
+    );
+
+    // -------------------------------------------------------------------------
+    // ACTIVE TARGET CHECK
+    // -------------------------------------------------------------------------
+
     const target =
       await this.prisma.target.findFirst({
         where: {
@@ -319,13 +485,26 @@ export class TargetsService {
         },
       });
 
-    if (!target) {
+    console.log(
+      'Prisma active target:',
+      target,
+    );
+
+    if (
+      !target
+    ) {
       throw new NotFoundException(
         'Target not found',
       );
     }
 
-    if (dto.productId) {
+    // =========================================================================
+    // PRODUCT VALIDATION
+    // =========================================================================
+
+    if (
+      dto.productId
+    ) {
       const product =
         await this.prisma.product.findFirst({
           where: {
@@ -340,17 +519,27 @@ export class TargetsService {
           },
         });
 
-      if (!product) {
+      if (
+        !product
+      ) {
         throw new NotFoundException(
           'Product not found',
         );
       }
     }
 
+    // =========================================================================
+    // SCOPE VALIDATION
+    // =========================================================================
+
     await this.validateAssignmentScope(
       dto,
       currentUser,
     );
+
+    // =========================================================================
+    // DUPLICATE ASSIGNMENT CHECK
+    // =========================================================================
 
     const duplicate =
       await this.prisma.targetAssignment.findFirst({
@@ -362,27 +551,92 @@ export class TargetsService {
             dto.scopeType,
 
           regionId:
-            dto.regionId ?? null,
+            dto.regionId ??
+            null,
 
           districtId:
-            dto.districtId ?? null,
+            dto.districtId ??
+            null,
 
           branchId:
-            dto.branchId ?? null,
+            dto.branchId ??
+            null,
 
           userId:
-            dto.userId ?? null,
+            dto.userId ??
+            null,
 
           productId:
-            dto.productId ?? null,
+            dto.productId ??
+            null,
         },
       });
 
-    if (duplicate) {
+    if (
+      duplicate
+    ) {
       throw new ConflictException(
         'Target already assigned to this scope and product',
       );
     }
+// =========================================================================
+// OVERLAPPING TARGET ASSIGNMENT VALIDATION
+// =========================================================================
+
+const overlappingAssignment =
+  await this.prisma.targetAssignment.findFirst({
+    where: {
+      scopeType: dto.scopeType,
+
+      // Match the same organizational recipient.
+      ...(dto.scopeType === 'REGION'
+        ? { regionId: dto.regionId }
+        : {}),
+
+      ...(dto.scopeType === 'DISTRICT'
+        ? { districtId: dto.districtId }
+        : {}),
+
+      ...(dto.scopeType === 'BRANCH'
+        ? { branchId: dto.branchId }
+        : {}),
+
+      ...(dto.scopeType === 'STAFF'
+        ? { userId: dto.userId }
+        : {}),
+
+      productId: dto.productId ?? null,
+
+      target: {
+        status: 'ACTIVE',
+
+        deletedAt: null,
+
+        metricType: target.metricType,
+
+        startDate: {
+          lte: target.endDate,
+        },
+
+        endDate: {
+          gte: target.startDate,
+        },
+      },
+    },
+
+    include: {
+      target: true,
+    },
+  });
+
+if (overlappingAssignment) {
+  throw new ConflictException(
+    'An active target already exists for this scope, product, metric, and overlapping reporting period',
+  );
+}
+    // =========================================================================
+    // CREATE ASSIGNMENT
+    // =========================================================================
 
     return this.prisma.targetAssignment.create({
       data: {
@@ -447,14 +701,20 @@ export class TargetsService {
   }
 
   // ==========================================================================
-  // VALIDATE TARGET SCOPE
+  // VALIDATE TARGET ASSIGNMENT SCOPE
   // ==========================================================================
 
   private async validateAssignmentScope(
     dto: AssignTargetDto,
     currentUser: AuthenticatedUser,
   ) {
-    switch (dto.scopeType) {
+    switch (
+      dto.scopeType
+    ) {
+      // ========================================================================
+      // GLOBAL
+      // ========================================================================
+
       case 'GLOBAL': {
         if (
           dto.regionId ||
@@ -480,8 +740,14 @@ export class TargetsService {
         break;
       }
 
+      // ========================================================================
+      // REGION
+      // ========================================================================
+
       case 'REGION': {
-        if (!dto.regionId) {
+        if (
+          !dto.regionId
+        ) {
           throw new BadRequestException(
             'regionId is required for REGION target',
           );
@@ -505,8 +771,14 @@ export class TargetsService {
         break;
       }
 
+      // ========================================================================
+      // DISTRICT
+      // ========================================================================
+
       case 'DISTRICT': {
-        if (!dto.districtId) {
+        if (
+          !dto.districtId
+        ) {
           throw new BadRequestException(
             'districtId is required for DISTRICT target',
           );
@@ -537,7 +809,9 @@ export class TargetsService {
             },
           });
 
-        if (!district) {
+        if (
+          !district
+        ) {
           throw new NotFoundException(
             'District not found',
           );
@@ -549,14 +823,22 @@ export class TargetsService {
         break;
       }
 
+      // ========================================================================
+      // BRANCH
+      // ========================================================================
+
       case 'BRANCH': {
-        if (!dto.branchId) {
+        if (
+          !dto.branchId
+        ) {
           throw new BadRequestException(
             'branchId is required for BRANCH target',
           );
         }
 
-        if (dto.userId) {
+        if (
+          dto.userId
+        ) {
           throw new BadRequestException(
             'BRANCH target must not contain userId',
           );
@@ -583,7 +865,9 @@ export class TargetsService {
             },
           });
 
-        if (!branch) {
+        if (
+          !branch
+        ) {
           throw new NotFoundException(
             'Branch not found',
           );
@@ -598,8 +882,14 @@ export class TargetsService {
         break;
       }
 
+      // ========================================================================
+      // STAFF
+      // ========================================================================
+
       case 'STAFF': {
-        if (!dto.userId) {
+        if (
+          !dto.userId
+        ) {
           throw new BadRequestException(
             'userId is required for STAFF target',
           );
@@ -632,13 +922,17 @@ export class TargetsService {
             },
           });
 
-        if (!user) {
+        if (
+          !user
+        ) {
           throw new NotFoundException(
             'User not found',
           );
         }
 
-        if (!user.staffProfile) {
+        if (
+          !user.staffProfile
+        ) {
           throw new BadRequestException(
             'Selected user is not assigned to a branch staff profile',
           );
@@ -648,6 +942,10 @@ export class TargetsService {
           currentUser,
           user.staffProfile.branchId,
         );
+
+        // ---------------------------------------------------------------------
+        // Derive organizational hierarchy automatically from StaffProfile.
+        // ---------------------------------------------------------------------
 
         dto.branchId =
           user.staffProfile.branchId;
@@ -661,6 +959,10 @@ export class TargetsService {
         break;
       }
 
+      // ========================================================================
+      // INVALID
+      // ========================================================================
+
       default:
         throw new BadRequestException(
           'Invalid target scope',
@@ -672,53 +974,136 @@ export class TargetsService {
   // GET ASSIGNMENTS
   // ==========================================================================
 
+   // ==========================================================================
+  // GET ASSIGNMENTS
+  // ==========================================================================
+
   async findAssignments(
     targetId: string,
+    currentUser: AuthenticatedUser,
   ) {
-    await this.findOne(
-      targetId,
-    );
+    await this.findOne(targetId);
 
-    return this.prisma.targetAssignment.findMany({
-      where: {
-        targetId,
-      },
+    const assignments =
+      await this.prisma.targetAssignment.findMany({
+        where: {
+          targetId,
+        },
 
-      include: {
-        region:
-          true,
+        include: {
+          region: true,
+          district: true,
+          branch: true,
+          product: true,
 
-        district:
-          true,
-
-        branch:
-          true,
-
-        product:
-          true,
-
-        user: {
-          select: {
-            id:
-              true,
-
-            username:
-              true,
-
-            firstName:
-              true,
-
-            lastName:
-              true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+            },
           },
         },
-      },
 
-      orderBy: {
-        createdAt:
-          'desc',
-      },
-    });
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+    // Global users can see every assignment.
+    if (this.scopeService.isGlobal(currentUser)) {
+      return assignments;
+    }
+
+    // Non-global users only receive assignments that fall inside
+    // their authorized organizational scope.
+    const visibleAssignments = [];
+
+    for (const assignment of assignments) {
+      try {
+        switch (assignment.scopeType) {
+          case 'GLOBAL': {
+            // GLOBAL assignments are applicable to all users and
+            // therefore safe to expose as inherited targets.
+            visibleAssignments.push(assignment);
+            break;
+          }
+
+          case 'REGION': {
+            if (!assignment.regionId) {
+              break;
+            }
+
+            await this.scopeService.assertRegionAccess(
+              currentUser,
+              assignment.regionId,
+            );
+
+            visibleAssignments.push(assignment);
+            break;
+          }
+
+          case 'DISTRICT': {
+            if (!assignment.districtId) {
+              break;
+            }
+
+            await this.scopeService.assertDistrictAccess(
+              currentUser,
+              assignment.districtId,
+            );
+
+            visibleAssignments.push(assignment);
+            break;
+          }
+
+          case 'BRANCH': {
+            if (!assignment.branchId) {
+              break;
+            }
+
+            await this.scopeService.assertBranchAccess(
+              currentUser,
+              assignment.branchId,
+            );
+
+            visibleAssignments.push(assignment);
+            break;
+          }
+
+          case 'STAFF': {
+            if (!assignment.branchId) {
+              break;
+            }
+
+            await this.scopeService.assertBranchAccess(
+              currentUser,
+              assignment.branchId,
+            );
+
+            // A Digital Reskilled Staff user must only see their own
+            // direct STAFF assignment.
+            if (
+              currentUser.roles.includes(
+                'DIGITAL_RESKILLED_STAFF',
+              ) &&
+              assignment.userId !== currentUser.id
+            ) {
+              break;
+            }
+
+            visibleAssignments.push(assignment);
+            break;
+          }
+        }
+      } catch {
+        // Assignment is outside the caller's organizational scope.
+        // Do not expose it.
+      }
+    }
+
+    return visibleAssignments;
   }
 
   // ==========================================================================
@@ -727,6 +1112,7 @@ export class TargetsService {
 
   async removeAssignment(
     id: string,
+    currentUser: AuthenticatedUser,
   ) {
     const assignment =
       await this.prisma.targetAssignment.findUnique({
@@ -741,6 +1127,83 @@ export class TargetsService {
       );
     }
 
+    // Global users can remove any assignment.
+    if (!this.scopeService.isGlobal(currentUser)) {
+      switch (assignment.scopeType) {
+        case 'GLOBAL': {
+          throw new BadRequestException(
+            'Only global users can remove GLOBAL target assignments',
+          );
+        }
+
+        case 'REGION': {
+          if (!assignment.regionId) {
+            throw new BadRequestException(
+              'Target assignment has no region',
+            );
+          }
+
+          await this.scopeService.assertRegionAccess(
+            currentUser,
+            assignment.regionId,
+          );
+
+          break;
+        }
+
+        case 'DISTRICT': {
+          if (!assignment.districtId) {
+            throw new BadRequestException(
+              'Target assignment has no district',
+            );
+          }
+
+          await this.scopeService.assertDistrictAccess(
+            currentUser,
+            assignment.districtId,
+          );
+
+          break;
+        }
+
+        case 'BRANCH': {
+          if (!assignment.branchId) {
+            throw new BadRequestException(
+              'Target assignment has no branch',
+            );
+          }
+
+          await this.scopeService.assertBranchAccess(
+            currentUser,
+            assignment.branchId,
+          );
+
+          break;
+        }
+
+        case 'STAFF': {
+          if (!assignment.branchId) {
+            throw new BadRequestException(
+              'Target assignment has no branch',
+            );
+          }
+
+          await this.scopeService.assertBranchAccess(
+            currentUser,
+            assignment.branchId,
+          );
+
+          break;
+        }
+
+        default: {
+          throw new BadRequestException(
+            'Invalid target assignment scope',
+          );
+        }
+      }
+    }
+
     await this.prisma.targetAssignment.delete({
       where: {
         id,
@@ -748,9 +1211,7 @@ export class TargetsService {
     });
 
     return {
-      success:
-        true,
-
+      success: true,
       message:
         'Target assignment removed successfully',
     };

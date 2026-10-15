@@ -1,18 +1,40 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { describe, expect, it, vi } from 'vitest';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+
 import { AuthService } from './auth.service.js';
+import { UsersService } from '../users/users.service.js';
+import { PrismaService } from '../../database/prisma/prisma.service.js';
 
 describe('AuthService', () => {
-  let service: AuthService;
+  it('should be defined with mocked dependencies', () => {
+    const usersService = {
+      findOne: vi.fn(),
+    } as unknown as UsersService;
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [AuthService],
-    }).compile();
+    const prismaService = {
+      user: {
+        findUnique: vi.fn(),
+      },
+    } as unknown as PrismaService;
 
-    service = module.get<AuthService>(AuthService);
-  });
+    const jwtService = {
+      signAsync: vi.fn(),
+      verifyAsync: vi.fn(),
+    } as unknown as JwtService;
 
-  it('should be defined', () => {
+    const configService = {
+      get: vi.fn(),
+      getOrThrow: vi.fn(),
+    } as unknown as ConfigService;
+
+    const service = new AuthService(
+      usersService,
+      prismaService,
+      jwtService,
+      configService,
+    );
+
     expect(service).toBeDefined();
   });
 });

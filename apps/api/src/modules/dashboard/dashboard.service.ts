@@ -1,68 +1,36 @@
-import {
-  Injectable,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
-import {
-  PrismaService,
-} from '../../database/prisma/prisma.service.js';
+import { PrismaService } from '../../database/prisma/prisma.service.js';
 
-import {
-  PerformanceService,
-} from '../performance/performance.service.js';
+import { PerformanceService } from '../performance/performance.service.js';
 
-import {
-  ScopeService,
-} from '../auth/services/scope.service.js';
+import { ScopeService } from '../auth/services/scope.service.js';
 
-import type {
-  AuthenticatedUser,
-} from '../auth/interfaces/authenticated-user.interface.js';
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
 
-import {
-  DashboardQueryDto,
-} from './dto/dashboard-query.dto.js';
+import { DashboardQueryDto } from './dto/dashboard-query.dto.js';
 
 @Injectable()
 export class DashboardService {
   constructor(
-    private readonly prisma:
-      PrismaService,
+    private readonly prisma: PrismaService,
 
-    private readonly performanceService:
-      PerformanceService,
+    private readonly performanceService: PerformanceService,
 
-    private readonly scopeService:
-      ScopeService,
+    private readonly scopeService: ScopeService,
   ) {}
 
-  async overview(
-    query: DashboardQueryDto,
-    user: AuthenticatedUser,
-  ) {
-    const performance =
-      await this.performanceService.summary(
-        query,
-        user,
-      );
+  async overview(query: DashboardQueryDto, user: AuthenticatedUser) {
+    const performance = await this.performanceService.summary(query, user);
 
-    const submissionStats =
-      await this.getSubmissionStats(
-        query,
-        user,
-      );
+    const submissionStats = await this.getSubmissionStats(query, user);
 
-    const followUpStats =
-      await this.getFollowUpStats(
-        query,
-        user,
-      );
+    const followUpStats = await this.getFollowUpStats(query, user);
 
     return {
       performance,
-      submissions:
-        submissionStats,
-      followUps:
-        followUpStats,
+      submissions: submissionStats,
+      followUps: followUpStats,
     };
   }
 
@@ -72,94 +40,77 @@ export class DashboardService {
   ) {
     const where: any = {};
 
+    // ==========================================================================
+    // DATE FILTER
+    // ==========================================================================
+
     if (query.startDate) {
       where.submissionDate = {
-        ...(where.submissionDate ??
-          {}),
-        gte:
-          new Date(
-            query.startDate,
-          ),
+        ...(where.submissionDate ?? {}),
+
+        gte: new Date(query.startDate),
       };
     }
 
     if (query.endDate) {
       where.submissionDate = {
-        ...(where.submissionDate ??
-          {}),
-        lte:
-          new Date(
-            query.endDate,
-          ),
+        ...(where.submissionDate ?? {}),
+
+        lte: new Date(query.endDate),
       };
     }
 
-    if (query.branchId) {
-      await this.scopeService.assertBranchAccess(
-        user,
-        query.branchId,
-      );
+    // ==========================================================================
+    // DIGITAL STAFF
+    //
+    // Digital Staff must only see their own submissions.
+    //
+    // Do this BEFORE evaluating region/district/branch filters so a manually
+    // supplied organization ID can never widen access.
+    // ==========================================================================
 
-      where.branchId =
-        query.branchId;
-    } else if (
-      query.districtId
-    ) {
-      await this.scopeService.assertDistrictAccess(
-        user,
-        query.districtId,
-      );
+    if (user.roles.includes('DIGITAL_RESKILLED_STAFF')) {
+      where.staffId = user.id;
+    }
+
+    // ==========================================================================
+    // GLOBAL / MANAGEMENT USERS
+    // ==========================================================================
+    else if (query.branchId) {
+      await this.scopeService.assertBranchAccess(user, query.branchId);
+
+      where.branchId = query.branchId;
+    } else if (query.districtId) {
+      await this.scopeService.assertDistrictAccess(user, query.districtId);
 
       where.branch = {
-        districtId:
-          query.districtId,
+        districtId: query.districtId,
       };
-    } else if (
-      query.regionId
-    ) {
-      await this.scopeService.assertRegionAccess(
-        user,
-        query.regionId,
-      );
+    } else if (query.regionId) {
+      await this.scopeService.assertRegionAccess(user, query.regionId);
 
       where.branch = {
         district: {
-          regionId:
-            query.regionId,
+          regionId: query.regionId,
         },
       };
-    } else if (
-      !this.scopeService.isGlobal(
-        user,
-      )
-    ) {
-      const regionIds =
-        this.scopeService.getRegionIds(
-          user,
-        );
+    } else if (!this.scopeService.isGlobal(user)) {
+      const regionIds = this.scopeService.getRegionIds(user);
 
-      const districtIds =
-        this.scopeService.getDistrictIds(
-          user,
-        );
+      const districtIds = this.scopeService.getDistrictIds(user);
 
-      const branchIds =
-        this.scopeService.getBranchIds(
-          user,
-        );
+      const branchIds = this.scopeService.getBranchIds(user);
 
       where.OR = [
         {
-          staffId:
-            user.id,
+          staffId: user.id,
         },
 
         ...(branchIds.length
           ? [
               {
                 branchId: {
-                  in:
-                    branchIds,
+                  in: branchIds,
                 },
               },
             ]
@@ -170,8 +121,7 @@ export class DashboardService {
               {
                 branch: {
                   districtId: {
-                    in:
-                      districtIds,
+                    in: districtIds,
                   },
                 },
               },
@@ -184,8 +134,7 @@ export class DashboardService {
                 branch: {
                   district: {
                     regionId: {
-                      in:
-                        regionIds,
+                      in: regionIds,
                     },
                   },
                 },
@@ -195,75 +144,42 @@ export class DashboardService {
       ];
     }
 
-    const grouped =
-      await this.prisma.dailySubmission.groupBy({
-        by: [
-          'status',
-        ],
+    // ==========================================================================
+    // GROUP BY STATUS
+    // ==========================================================================
 
-        where,
+    const grouped = await this.prisma.dailySubmission.groupBy({
+      by: ['status'],
 
-        _count: {
-          _all:
-            true,
-        },
-      });
+      where,
 
-    const result: Record<
-      string,
-      number
-    > = {};
+      _count: {
+        _all: true,
+      },
+    });
 
-    for (
-      const item
-      of grouped
-    ) {
-      result[
-        item.status
-      ] =
-        item._count._all;
+    const result: Record<string, number> = {};
+
+    for (const item of grouped) {
+      result[item.status] = item._count._all;
     }
 
     return {
-      total:
-        grouped.reduce(
-          (
-            sum,
-            item,
-          ) =>
-            sum +
-            item._count
-              ._all,
-          0,
-        ),
+      total: grouped.reduce((sum, item) => sum + item._count._all, 0),
 
-      draft:
-        result.DRAFT ??
-        0,
+      draft: result.DRAFT ?? 0,
 
-      submitted:
-        result.SUBMITTED ??
-        0,
+      submitted: result.SUBMITTED ?? 0,
 
-      resubmitted:
-        result.RESUBMITTED ??
-        0,
+      resubmitted: result.RESUBMITTED ?? 0,
 
-      reviewed:
-        result.REVIEWED ??
-        0,
+      reviewed: result.REVIEWED ?? 0,
 
-      approved:
-        result.APPROVED ??
-        0,
+      approved: result.APPROVED ?? 0,
 
-      returned:
-        result.RETURNED_FOR_CORRECTION ??
-        0,
+      returned: result.RETURNED_FOR_CORRECTION ?? 0,
 
-      rejected:
-        result.REJECTED ??
-        0,
+      rejected: result.REJECTED ?? 0,
     };
   }
 
@@ -273,72 +189,54 @@ export class DashboardService {
   ) {
     const where: any = {};
 
-    if (query.branchId) {
-      await this.scopeService.assertBranchAccess(
-        user,
-        query.branchId,
-      );
+    // ==========================================================================
+    // DIGITAL STAFF
+    //
+    // Digital Staff must only see follow-ups assigned to themselves.
+    // ==========================================================================
 
-      where.branchId =
-        query.branchId;
-    } else if (
-      query.districtId
-    ) {
-      await this.scopeService.assertDistrictAccess(
-        user,
-        query.districtId,
-      );
+    if (user.roles.includes('DIGITAL_RESKILLED_STAFF')) {
+      where.assignedToUserId = user.id;
+    }
+
+    // ==========================================================================
+    // MANAGEMENT / ORGANIZATIONAL FILTERS
+    // ==========================================================================
+    else if (query.branchId) {
+      await this.scopeService.assertBranchAccess(user, query.branchId);
+
+      where.branchId = query.branchId;
+    } else if (query.districtId) {
+      await this.scopeService.assertDistrictAccess(user, query.districtId);
 
       where.branch = {
-        districtId:
-          query.districtId,
+        districtId: query.districtId,
       };
-    } else if (
-      query.regionId
-    ) {
-      await this.scopeService.assertRegionAccess(
-        user,
-        query.regionId,
-      );
+    } else if (query.regionId) {
+      await this.scopeService.assertRegionAccess(user, query.regionId);
 
       where.branch = {
         district: {
-          regionId:
-            query.regionId,
+          regionId: query.regionId,
         },
       };
-    } else if (
-      !this.scopeService.isGlobal(
-        user,
-      )
-    ) {
-      const regionIds =
-        this.scopeService.getRegionIds(
-          user,
-        );
+    } else if (!this.scopeService.isGlobal(user)) {
+      const regionIds = this.scopeService.getRegionIds(user);
 
-      const districtIds =
-        this.scopeService.getDistrictIds(
-          user,
-        );
+      const districtIds = this.scopeService.getDistrictIds(user);
 
-      const branchIds =
-        this.scopeService.getBranchIds(
-          user,
-        );
+      const branchIds = this.scopeService.getBranchIds(user);
 
       where.OR = [
         {
-          assignedToUserId:
-            user.id,
+          assignedToUserId: user.id,
         },
 
         ...(branchIds.length
           ? [
               {
                 branchId: {
-                  in:
-                    branchIds,
+                  in: branchIds,
                 },
               },
             ]
@@ -349,8 +247,7 @@ export class DashboardService {
               {
                 branch: {
                   districtId: {
-                    in:
-                      districtIds,
+                    in: districtIds,
                   },
                 },
               },
@@ -363,8 +260,7 @@ export class DashboardService {
                 branch: {
                   district: {
                     regionId: {
-                      in:
-                        regionIds,
+                      in: regionIds,
                     },
                   },
                 },
@@ -374,286 +270,225 @@ export class DashboardService {
       ];
     }
 
-    const grouped =
-      await this.prisma.followUp.groupBy({
-        by: [
-          'status',
-        ],
+    // ==========================================================================
+    // STATUS SUMMARY
+    // ==========================================================================
 
-        where,
+    const grouped = await this.prisma.followUp.groupBy({
+      by: ['status'],
 
-        _count: {
-          _all:
-            true,
-        },
-      });
+      where,
 
-    const values: Record<
-      string,
-      number
-    > = {};
+      _count: {
+        _all: true,
+      },
+    });
 
-    for (
-      const item
-      of grouped
-    ) {
-      values[
-        item.status
-      ] =
-        item._count._all;
+    const values: Record<string, number> = {};
+
+    for (const item of grouped) {
+      values[item.status] = item._count._all;
     }
 
-    const today =
-      new Date();
+    // ==========================================================================
+    // OVERDUE
+    // ==========================================================================
 
-    today.setHours(
-      0,
-      0,
-      0,
-      0,
-    );
+    const today = new Date();
 
-    const overdue =
-      await this.prisma.followUp.count({
-        where: {
-          ...where,
+    today.setHours(0, 0, 0, 0);
 
-          followUpDate: {
-            lt:
-              today,
-          },
+    const overdue = await this.prisma.followUp.count({
+      where: {
+        ...where,
 
-          status: {
-            in: [
-              'OPEN',
-              'CONTACTED',
-              'RESCHEDULED',
-            ],
-          },
+        followUpDate: {
+          lt: today,
         },
-      });
+
+        status: {
+          notIn: ['CONVERTED', 'CLOSED'],
+        },
+      },
+    });
 
     return {
-      total:
-        grouped.reduce(
-          (
-            sum,
-            item,
-          ) =>
-            sum +
-            item._count
-              ._all,
-          0,
-        ),
+      total: grouped.reduce((sum, item) => sum + item._count._all, 0),
 
-      open:
-        values.OPEN ??
-        0,
+      open: values.OPEN ?? 0,
 
-      contacted:
-        values.CONTACTED ??
-        0,
+      contacted: values.CONTACTED ?? 0,
 
-      rescheduled:
-        values.RESCHEDULED ??
-        0,
+      converted: values.CONVERTED ?? 0,
 
-      converted:
-        values.CONVERTED ??
-        0,
-
-      notInterested:
-        values.NOT_INTERESTED ??
-        0,
-
-      unreachable:
-        values.UNREACHABLE ??
-        0,
-
-      closed:
-        values.CLOSED ??
-        0,
+      rescheduled: values.RESCHEDULED ?? 0,
 
       overdue,
     };
   }
 
-  async branchRanking(
-    query: DashboardQueryDto,
-    user: AuthenticatedUser,
-  ) {
-    const branches =
-      this.scopeService.isGlobal(
-        user,
-      )
-        ? await this.prisma.branch.findMany({
-            where: {
-              deletedAt:
-                null,
+  async branchRanking(query: DashboardQueryDto, user: AuthenticatedUser) {
+    const branches = this.scopeService.isGlobal(user)
+      ? await this.prisma.branch.findMany({
+          where: {
+            deletedAt: null,
 
-              ...(query.districtId
-                ? {
-                    districtId:
-                      query.districtId,
-                  }
-                : {}),
+            ...(query.districtId
+              ? {
+                  districtId: query.districtId,
+                }
+              : {}),
 
-              ...(query.regionId
-                ? {
-                    district: {
-                      regionId:
-                        query.regionId,
-                    },
-                  }
-                : {}),
-            },
+            ...(query.regionId
+              ? {
+                  district: {
+                    regionId: query.regionId,
+                  },
+                }
+              : {}),
+          },
 
-            include: {
-              district: {
-                include: {
-                  region:
-                    true,
-                },
+          include: {
+            district: {
+              include: {
+                region: true,
               },
             },
-          })
-        : await this.getAccessibleBranches(
-            user,
-          );
+          },
+        })
+      : await this.getAccessibleBranches(user);
 
     const rows = [];
 
-    for (
-      const branch
-      of branches
-    ) {
-      const result =
-        await this.performanceService.summary(
-          {
-            ...query,
-            regionId:
-              undefined,
-            districtId:
-              undefined,
-            branchId:
-              branch.id,
-            staffId:
-              undefined,
-          },
-          user,
-        );
+    for (const branch of branches) {
+      const result = await this.performanceService.summary(
+        {
+          ...query,
+          regionId: undefined,
+          districtId: undefined,
+          branchId: branch.id,
+          staffId: undefined,
+        },
+        user,
+      );
 
       rows.push({
-        branchId:
-          branch.id,
+        branchId: branch.id,
 
-        branchCode:
-          branch.code,
+        branchCode: branch.code,
 
-        branchName:
-          branch.name,
+        branchName: branch.name,
 
-        districtName:
-          branch.district.name,
+        districtName: branch.district.name,
 
-        regionName:
-          branch.district.region.name,
+        regionName: branch.district.region.name,
 
-        target:
-          result.achievement.target,
+        target: result.achievement.target,
 
-        activations:
-          result.activation.activations,
+        activations: result.activation.activations,
 
-        transactions:
-          result.transaction.transactions,
+        transactions: result.transaction.transactions,
 
-        conversionRate:
-          result.conversion.rate,
+        conversionRate: result.conversion.rate,
 
-        achievementRate:
-          result.achievement.percentage,
+        achievementRate: result.achievement.percentage,
       });
     }
 
-    return rows.sort(
-      (
-        a,
-        b,
-      ) =>
-        b.achievementRate -
-        a.achievementRate,
-    );
+    return rows.sort((a, b) => b.achievementRate - a.achievementRate);
   }
 
-  private async getAccessibleBranches(
-    user: AuthenticatedUser,
-  ) {
-    const regionIds =
-      this.scopeService.getRegionIds(
-        user,
-      );
+  private async getAccessibleBranches(user: AuthenticatedUser) {
+    // ------------------------------------------------------------------------
+    // Explicit organizational scopes
+    // ------------------------------------------------------------------------
 
-    const districtIds =
-      this.scopeService.getDistrictIds(
-        user,
-      );
+    const regionIds = this.scopeService.getRegionIds(user);
 
-    const branchIds =
-      this.scopeService.getBranchIds(
-        user,
-      );
+    const districtIds = this.scopeService.getDistrictIds(user);
+
+    const branchIds = this.scopeService.getBranchIds(user);
+
+    // ------------------------------------------------------------------------
+    // STAFF SCOPE
+    //
+    // Digital Reskilled Staff normally has STAFF scope rather than BRANCH
+    // scope. StaffProfile is therefore the authoritative source for the
+    // employee's assigned branch.
+    // ------------------------------------------------------------------------
+
+    const staffProfile = await this.prisma.staffProfile.findUnique({
+      where: {
+        userId: user.id,
+      },
+
+      select: {
+        branchId: true,
+      },
+    });
+
+    const accessibleBranchIds = new Set<string>(branchIds);
+
+    if (staffProfile?.branchId) {
+      accessibleBranchIds.add(staffProfile.branchId);
+    }
+
+    // ------------------------------------------------------------------------
+    // SECURITY
+    //
+    // A non-global user with no resolvable organizational assignment must
+    // receive no branches.
+    // ------------------------------------------------------------------------
+
+    const orConditions: any[] = [];
+
+    if (accessibleBranchIds.size > 0) {
+      orConditions.push({
+        id: {
+          in: [...accessibleBranchIds],
+        },
+      });
+    }
+
+    if (districtIds.length > 0) {
+      orConditions.push({
+        districtId: {
+          in: districtIds,
+        },
+      });
+    }
+
+    if (regionIds.length > 0) {
+      orConditions.push({
+        district: {
+          regionId: {
+            in: regionIds,
+          },
+        },
+      });
+    }
+
+    if (orConditions.length === 0) {
+      return [];
+    }
 
     return this.prisma.branch.findMany({
       where: {
-        deletedAt:
-          null,
+        deletedAt: null,
 
-        OR: [
-          ...(branchIds.length
-            ? [
-                {
-                  id: {
-                    in:
-                      branchIds,
-                  },
-                },
-              ]
-            : []),
-
-          ...(districtIds.length
-            ? [
-                {
-                  districtId: {
-                    in:
-                      districtIds,
-                  },
-                },
-              ]
-            : []),
-
-          ...(regionIds.length
-            ? [
-                {
-                  district: {
-                    regionId: {
-                      in:
-                        regionIds,
-                    },
-                  },
-                },
-              ]
-            : []),
-        ],
+        OR: orConditions,
       },
 
       include: {
         district: {
           include: {
-            region:
-              true,
+            region: true,
           },
         },
+      },
+
+      orderBy: {
+        name: 'asc',
       },
     });
   }

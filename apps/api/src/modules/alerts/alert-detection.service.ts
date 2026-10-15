@@ -12,6 +12,10 @@ export class AlertDetectionService {
     private readonly prisma: PrismaService,
   ) {}
 
+  // ==========================================================================
+  // MISSED DAILY SUBMISSION DETECTION
+  // ==========================================================================
+
   async detectMissedSubmissions(
     date = new Date(),
   ) {
@@ -148,131 +152,264 @@ export class AlertDetectionService {
     };
   }
 
+  // ==========================================================================
+  // LOW CONVERSION DETECTION
+  // ==========================================================================
+
   async detectLowConversion(
-  date = new Date(),
-) {
-  const start =
-    new Date(date);
+    date = new Date(),
+  ) {
+    const start =
+      new Date(date);
 
-  start.setHours(
-    0,
-    0,
-    0,
-    0,
-  );
+    start.setHours(
+      0,
+      0,
+      0,
+      0,
+    );
 
-  const end =
-    new Date(date);
+    const end =
+      new Date(date);
 
-  end.setHours(
-    23,
-    59,
-    59,
-    999,
-  );
+    end.setHours(
+      23,
+      59,
+      59,
+      999,
+    );
 
-  const activities =
-    await this.prisma.activity.findMany({
-      where: {
-        activityDate: {
-          gte:
-            start,
+    const activities =
+      await this.prisma.activity.findMany({
+        where: {
+          activityDate: {
+            gte:
+              start,
 
-          lte:
-            end,
+            lte:
+              end,
+          },
         },
-      },
 
-      include: {
-        branch: {
-          include: {
-            district: {
-              include: {
-                region:
-                  true,
+        include: {
+          branch: {
+            include: {
+              district: {
+                include: {
+                  region:
+                    true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-  const branchMap =
-    new Map<
-      string,
-      {
-        visits: number;
-        educated: number;
-        activations: number;
-        branch: typeof activities[number]['branch'];
-      }
-    >();
+    const branchMap =
+      new Map<
+        string,
+        {
+          visits: number;
+          educated: number;
+          activations: number;
+          branch: typeof activities[number]['branch'];
+        }
+      >();
 
-  for (const activity of activities) {
-    const current =
-      branchMap.get(
+    for (const activity of activities) {
+      const current =
+        branchMap.get(
+          activity.branchId,
+        ) ?? {
+          visits:
+            0,
+
+          educated:
+            0,
+
+          activations:
+            0,
+
+          branch:
+            activity.branch,
+        };
+
+      current.visits +=
+        activity.customerVisits;
+
+      current.educated +=
+        activity.customersEducated;
+
+      current.activations +=
+        activity.activations;
+
+      branchMap.set(
         activity.branchId,
-      ) ?? {
-        visits:
-          0,
+        current,
+      );
+    }
 
-        educated:
-          0,
+    let generated = 0;
 
-        activations:
-          0,
+    for (
+      const [
+        branchId,
+        data,
+      ] of branchMap
+    ) {
+      const conversionRate =
+        data.educated > 0
+          ? (
+              data.activations /
+              data.educated
+            ) * 100
+          : 0;
 
-        branch:
-          activity.branch,
-      };
+      if (
+        data.visits >= 20 &&
+        data.educated >= 10 &&
+        conversionRate < 30
+      ) {
+        const existing =
+          await this.prisma.alert.findFirst({
+            where: {
+              alertType:
+                'HIGH_ACTIVITY_LOW_CONVERSION',
 
-    current.visits +=
-      activity.customerVisits;
+              branchId,
 
-    current.educated +=
-      activity.customersEducated;
+              detectedAt: {
+                gte:
+                  start,
+              },
+            },
+          });
 
-    current.activations +=
-      activity.activations;
+        if (existing) {
+          continue;
+        }
 
-    branchMap.set(
-      activity.branchId,
-      current,
-    );
+        await this.prisma.alert.create({
+          data: {
+            title:
+              'High Activity / Low Conversion',
+
+            message:
+              `${data.branch.name} recorded high customer activity but low activation conversion.`,
+
+            severity:
+              'HIGH',
+
+            alertType:
+              'HIGH_ACTIVITY_LOW_CONVERSION',
+
+            scopeType:
+              'BRANCH',
+
+            regionId:
+              data.branch.district.regionId,
+
+            districtId:
+              data.branch.districtId,
+
+            branchId,
+
+            metadata: {
+              visits:
+                data.visits,
+
+              educated:
+                data.educated,
+
+              activations:
+                data.activations,
+
+              conversionRate:
+                Number(
+                  conversionRate.toFixed(
+                    2,
+                  ),
+                ),
+            },
+          },
+        });
+
+        generated++;
+      }
+    }
+
+    return {
+      generated,
+    };
   }
 
-  let generated = 0;
+  // ==========================================================================
+  // OVERDUE FOLLOW-UP DETECTION
+  // ==========================================================================
 
-  for (
-    const [
-      branchId,
-      data,
-    ] of branchMap
-  ) {
-    const conversionRate =
-      data.educated > 0
-        ? (
-            data.activations /
-            data.educated
-          ) * 100
-        : 0;
+  async detectOverdueFollowUps() {
+    const today =
+      new Date();
 
-    if (
-      data.visits >= 20 &&
-      data.educated >= 10 &&
-      conversionRate < 30
-    ) {
+    today.setHours(
+      0,
+      0,
+      0,
+      0,
+    );
+
+    const overdue =
+      await this.prisma.followUp.findMany({
+        where: {
+          followUpDate: {
+            lt:
+              today,
+          },
+
+          status: {
+            in: [
+              'OPEN',
+              'CONTACTED',
+              'RESCHEDULED',
+            ],
+          },
+        },
+
+        include: {
+          branch: {
+            include: {
+              district: {
+                include: {
+                  region:
+                    true,
+                },
+              },
+            },
+          },
+
+          assignedTo:
+            true,
+        },
+      });
+
+    let generated = 0;
+
+    for (const item of overdue) {
       const existing =
         await this.prisma.alert.findFirst({
           where: {
             alertType:
-              'HIGH_ACTIVITY_LOW_CONVERSION',
+              'OVERDUE_FOLLOW_UP',
 
-            branchId,
+            recipientUserId:
+              item.assignedToUserId,
 
-            detectedAt: {
-              gte:
-                start,
+            metadata: {
+              path:
+                '$.followUpId',
+
+              equals:
+                item.id,
             },
           },
         });
@@ -284,194 +421,73 @@ export class AlertDetectionService {
       await this.prisma.alert.create({
         data: {
           title:
-            'High Activity / Low Conversion',
+            'Overdue Customer Follow-up',
 
           message:
-            `${data.branch.name} recorded high customer activity but low activation conversion.`,
+            `A customer follow-up assigned to ${item.assignedTo.firstName} ${item.assignedTo.lastName} is overdue.`,
 
           severity:
-            'HIGH',
+            'MEDIUM',
 
           alertType:
-            'HIGH_ACTIVITY_LOW_CONVERSION',
+            'OVERDUE_FOLLOW_UP',
 
           scopeType:
-            'BRANCH',
+            'STAFF',
 
           regionId:
-            data.branch.district.regionId,
+            item.branch.district.regionId,
 
           districtId:
-            data.branch.districtId,
+            item.branch.districtId,
 
-          branchId,
+          branchId:
+            item.branchId,
+
+          recipientUserId:
+            item.assignedToUserId,
 
           metadata: {
-            visits:
-              data.visits,
+            followUpId:
+              item.id,
 
-            educated:
-              data.educated,
-
-            activations:
-              data.activations,
-
-            conversionRate:
-              Number(
-                conversionRate.toFixed(
-                  2,
-                ),
-              ),
+            followUpDate:
+              item.followUpDate.toISOString(),
           },
         },
       });
 
       generated++;
     }
+
+    return {
+      generated,
+    };
   }
 
-  return {
-    generated,
-  };
-}
-async detectOverdueFollowUps() {
-  const today =
-    new Date();
+  // ==========================================================================
+  // RUN ALL ALERT DETECTION RULES
+  // ==========================================================================
 
-  today.setHours(
-    0,
-    0,
-    0,
-    0,
-  );
+  async runAll() {
+    const missed =
+      await this.detectMissedSubmissions();
 
-  const overdue =
-    await this.prisma.followUp.findMany({
-      where: {
-        followUpDate: {
-          lt:
-            today,
-        },
+    const lowConversion =
+      await this.detectLowConversion();
 
-        status: {
-          in: [
-            'OPEN',
-            'CONTACTED',
-            'RESCHEDULED',
-          ],
-        },
-      },
+    const overdueFollowUps =
+      await this.detectOverdueFollowUps();
 
-      include: {
-        branch: {
-          include: {
-            district: {
-              include: {
-                region:
-                  true,
-              },
-            },
-          },
-        },
+    return {
+      missedSubmissions:
+        missed.generated,
 
-        assignedTo:
-          true,
-      },
-    });
+      lowConversion:
+        lowConversion.generated,
 
-  let generated = 0;
-
-  for (const item of overdue) {
-    const existing =
-      await this.prisma.alert.findFirst({
-        where: {
-          alertType:
-            'OVERDUE_FOLLOW_UP',
-
-          recipientUserId:
-            item.assignedToUserId,
-
-          metadata: {
-            path: [
-              'followUpId',
-            ],
-
-            equals:
-              item.id,
-          },
-        },
-      });
-
-    if (existing) {
-      continue;
-    }
-
-    await this.prisma.alert.create({
-      data: {
-        title:
-          'Overdue Customer Follow-up',
-
-        message:
-          `A customer follow-up assigned to ${item.assignedTo.firstName} ${item.assignedTo.lastName} is overdue.`,
-
-        severity:
-          'MEDIUM',
-
-        alertType:
-          'OVERDUE_FOLLOW_UP',
-
-        scopeType:
-          'STAFF',
-
-        regionId:
-          item.branch.district.regionId,
-
-        districtId:
-          item.branch.districtId,
-
-        branchId:
-          item.branchId,
-
-        recipientUserId:
-          item.assignedToUserId,
-
-        metadata: {
-          followUpId:
-            item.id,
-
-          followUpDate:
-            item.followUpDate.toISOString(),
-        },
-      },
-    });
-
-    generated++;
+      overdueFollowUps:
+        overdueFollowUps.generated,
+    };
   }
-
-  return {
-    generated,
-  };
-}
-async runAll() {
-  const missed =
-    await this.detectMissedSubmissions();
-
-  const lowConversion =
-    await this.detectLowConversion();
-
-  const overdueFollowUps =
-    await this.detectOverdueFollowUps();
-
-  return {
-    missedSubmissions:
-      missed.generated,
-
-    lowConversion:
-      lowConversion.generated,
-
-    overdueFollowUps:
-      overdueFollowUps.generated,
-  };
-}
-
 }

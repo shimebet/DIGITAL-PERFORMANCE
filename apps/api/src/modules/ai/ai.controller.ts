@@ -1,3 +1,5 @@
+// src/modules/ai/ai.controller.ts
+
 import {
   Body,
   Controller,
@@ -37,10 +39,14 @@ export class AiController {
       AiService,
   ) {}
 
+  // ==========================================================================
+  // GENERATE INSIGHTS
+  // ==========================================================================
+
   @Post('generate')
-  @Permissions('ai.manage')
+  @Permissions('ai.read')
   generate(
-    @Query()
+    @Body()
     query: AiQueryDto,
 
     @CurrentUser()
@@ -52,20 +58,32 @@ export class AiController {
     );
   }
 
+  // ==========================================================================
+  // STORED INSIGHTS
+  // ==========================================================================
+
   @Get('insights')
   @Permissions('ai.read')
-  findAll(
+  insights(
+    @Query()
+    query: AiQueryDto,
+
     @CurrentUser()
     user: AuthenticatedUser,
   ) {
     return this.aiService.findAll(
       user,
+      query,
     );
   }
 
+  // ==========================================================================
+  // MANAGEMENT SUMMARY
+  // ==========================================================================
+
   @Get('summary')
   @Permissions('ai.read')
-  managementSummary(
+  summary(
     @Query()
     query: AiQueryDto,
 
@@ -78,9 +96,13 @@ export class AiController {
     );
   }
 
+  // ==========================================================================
+  // MANAGEMENT ANALYTICS QUERY
+  // ==========================================================================
+
   @Post('query')
   @Permissions('ai.read')
-  query(
+  managementQuery(
     @Body()
     dto: ManagementQueryDto,
 
@@ -88,7 +110,7 @@ export class AiController {
     user: AuthenticatedUser,
   ) {
     return this.aiService.managementQuery(
-      dto.question,
+      dto,
       user,
     );
   }

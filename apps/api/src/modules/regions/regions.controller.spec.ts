@@ -1,15 +1,26 @@
-import { Test, TestingModule } from '@nestjs/testing';
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { RegionsController } from './regions.controller.js';
+import { RegionsService } from './regions.service.js';
 
 describe('RegionsController', () => {
   let controller: RegionsController;
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [RegionsController],
-    }).compile();
+  const regionsServiceMock = {
+    create: vi.fn(),
+    findAll: vi.fn(),
+    findOne: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
+  };
 
-    controller = module.get<RegionsController>(RegionsController);
+  beforeEach(() => {
+    vi.resetAllMocks();
+
+    controller = new RegionsController(
+      regionsServiceMock as unknown as RegionsService,
+    );
   });
 
   it('should be defined', () => {

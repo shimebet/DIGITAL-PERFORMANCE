@@ -633,7 +633,7 @@ async function main() {
   console.log(`Seeded ${permissions.length} permissions.`);
 
   // ============================================================================
-  // DEVELOPMENT ORGANIZATIONAL HIERARCHY
+  // 3. DEVELOPMENT ORGANIZATIONAL HIERARCHY
   // ============================================================================
 
   console.log('Seeding development organizational hierarchy...');
@@ -857,7 +857,7 @@ async function main() {
   console.log('Development organizational hierarchy seeded.');
 
   // ============================================================
-  // DEVELOPMENT USERS
+  // 4. DEVELOPMENT USERS AND SCOPES
   // ============================================================
 
   const developmentUsers = [
@@ -931,6 +931,17 @@ async function main() {
       lastName: 'Staff',
       roleCode: 'DIGITAL_RESKILLED_STAFF',
       scopeType: 'STAFF',
+      employeeNumber: 'DRS-0001',
+    },
+
+    {
+      username: 'digital.staff2',
+      password: 'Digital2@123',
+      firstName: 'Digital',
+      lastName: 'Staff Two',
+      roleCode: 'DIGITAL_RESKILLED_STAFF',
+      scopeType: 'STAFF',
+      employeeNumber: 'DRS-0002',
     },
 
     {
@@ -1087,6 +1098,10 @@ async function main() {
     }
 
     if (item.scopeType === 'STAFF') {
+      // ============================================================
+      // STAFF ROLE ASSIGNMENT
+      // ============================================================
+
       await prisma.userRole.create({
         data: {
           userId: user.id,
@@ -1103,9 +1118,11 @@ async function main() {
         },
       });
 
-      // ==========================================================
+      // ============================================================
       // DIGITAL STAFF PROFILE
-      // ==========================================================
+      //
+      // Each staff member receives an independent employee number.
+      // ============================================================
 
       await prisma.staffProfile.upsert({
         where: {
@@ -1115,7 +1132,7 @@ async function main() {
         update: {
           branchId: boleBranch.id,
 
-          employeeNumber: 'DRS-0001',
+          employeeNumber: item.employeeNumber,
 
           jobTitle: 'Digital Reskilled Staff',
 
@@ -1129,7 +1146,7 @@ async function main() {
 
           branchId: boleBranch.id,
 
-          employeeNumber: 'DRS-0001',
+          employeeNumber: item.employeeNumber,
 
           jobTitle: 'Digital Reskilled Staff',
 
@@ -1147,7 +1164,15 @@ async function main() {
 
   console.log(`Seeded ${developmentUsers.length} development users.`);
   // ==========================================================================
-  // 3. SUPER ADMIN PERMISSIONS
+  // 5. ROLE-PERMISSION MATRIX
+  // ==========================================================================
+  //
+  // Permissions define WHAT a role can do.
+  // UserRole scope defines WHERE that role can do it.
+  //
+  // This section is intentionally deterministic: each seed run replaces the
+  // complete permission set for every system role so database assignments stay
+  // synchronized with this source file.
   // ==========================================================================
 
   const superAdminRole = await prisma.role.findUniqueOrThrow({
@@ -1156,47 +1181,88 @@ async function main() {
     },
   });
 
-  const allPermissions = await prisma.permission.findMany();
-
-  for (const permission of allPermissions) {
-    await prisma.rolePermission.upsert({
+  async function assignPermissionsToRole(
+    roleCode: string,
+    permissionCodes: readonly string[],
+  ) {
+    const role = await prisma.role.findUniqueOrThrow({
       where: {
-        roleId_permissionId: {
-          roleId: superAdminRole.id,
+        code: roleCode,
+      },
+    });
 
-          permissionId: permission.id,
+    const uniquePermissionCodes = [...new Set(permissionCodes)];
+
+    const resolvedPermissions = await prisma.permission.findMany({
+      where: {
+        code: {
+          in: uniquePermissionCodes,
         },
       },
 
-      update: {},
-
-      create: {
-        roleId: superAdminRole.id,
-
-        permissionId: permission.id,
+      select: {
+        id: true,
+        code: true,
       },
     });
+
+    const foundCodes = new Set(
+      resolvedPermissions.map((permission) => permission.code),
+    );
+
+    const missingCodes = uniquePermissionCodes.filter(
+      (code) => !foundCodes.has(code),
+    );
+
+    if (missingCodes.length > 0) {
+      throw new Error(
+        `Missing permissions for ${roleCode}: ${missingCodes.join(', ')}`,
+      );
+    }
+
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId: role.id,
+      },
+    });
+
+    if (resolvedPermissions.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: resolvedPermissions.map((permission) => ({
+          roleId: role.id,
+          permissionId: permission.id,
+        })),
+      });
+    }
+
+    console.log(
+      `Assigned ${resolvedPermissions.length} permissions to ${roleCode}.`,
+    );
   }
 
-  console.log(`Assigned ${allPermissions.length} permissions to SUPER_ADMIN.`);
+  // --------------------------------------------------------------------------
+  // SUPER ADMIN
+  // --------------------------------------------------------------------------
 
-  // ==========================================================================
-  // 4. SYSTEM ADMIN PERMISSIONS
-  // ==========================================================================
-
-  const systemAdminRole = await prisma.role.findUniqueOrThrow({
-    where: {
-      code: 'SYSTEM_ADMIN',
+  const allPermissionRecords = await prisma.permission.findMany({
+    select: {
+      code: true,
     },
   });
+
+  const superAdminPermissionCodes = allPermissionRecords.map(
+    (permission) => permission.code,
+  );
+
+  // --------------------------------------------------------------------------
+  // SYSTEM ADMIN
+  // --------------------------------------------------------------------------
 
   const systemAdminPermissionCodes = [
     'dashboard.read',
 
     'region.read',
-
     'district.read',
-
     'branch.read',
 
     'user.create',
@@ -1206,7 +1272,6 @@ async function main() {
 
     'role.read',
     'role.update',
-
     'permission.read',
     'permission.assign',
 
@@ -1216,47 +1281,283 @@ async function main() {
 
     'report.read',
     'report.export',
-
     'audit.read',
 
     'settings.read',
     'settings.update',
-  ];
+  ] as const;
 
-  const systemAdminPermissions = await prisma.permission.findMany({
-    where: {
-      code: {
-        in: systemAdminPermissionCodes,
-      },
-    },
-  });
+  // --------------------------------------------------------------------------
+  // REGIONAL MANAGER
+  // --------------------------------------------------------------------------
 
-  for (const permission of systemAdminPermissions) {
-    await prisma.rolePermission.upsert({
-      where: {
-        roleId_permissionId: {
-          roleId: systemAdminRole.id,
+  const regionalManagerPermissionCodes = [
+    'dashboard.read',
 
-          permissionId: permission.id,
-        },
-      },
+    'region.read',
+    'district.read',
+    'branch.read',
 
-      update: {},
+    'product.read',
+    'target.read',
 
-      create: {
-        roleId: systemAdminRole.id,
+    'activity.read',
 
-        permissionId: permission.id,
-      },
-    });
-  }
+    'submission.read',
+    'submission.review',
+    'submission.approve',
 
-  console.log(
-    `Assigned ${systemAdminPermissions.length} permissions to SYSTEM_ADMIN.`,
+    'followup.read',
+    'followup.update',
+
+    'report.read',
+    'report.export',
+
+    'alert.read',
+    'alert.update',
+    'ai.read',
+  ] as const;
+
+  // --------------------------------------------------------------------------
+  // REGIONAL ANALYST
+  // --------------------------------------------------------------------------
+
+  const regionalAnalystPermissionCodes = [
+    'dashboard.read',
+
+    'region.read',
+    'district.read',
+    'branch.read',
+
+    'product.read',
+    'target.read',
+
+    'activity.read',
+    'submission.read',
+    'followup.read',
+
+    'report.read',
+    'report.export',
+
+    'alert.read',
+    'ai.read',
+  ] as const;
+
+  // --------------------------------------------------------------------------
+  // DISTRICT MANAGER
+  // --------------------------------------------------------------------------
+
+  const districtManagerPermissionCodes = [
+    'dashboard.read',
+
+    'region.read',
+    'district.read',
+    'branch.read',
+
+    'product.read',
+    'target.read',
+
+    'activity.read',
+
+    'submission.read',
+    'submission.review',
+    'submission.approve',
+
+    'followup.read',
+    'followup.update',
+
+    'report.read',
+    'report.export',
+
+    'alert.read',
+    'alert.update',
+    'ai.read',
+  ] as const;
+
+  // --------------------------------------------------------------------------
+  // DISTRICT ANALYST
+  // --------------------------------------------------------------------------
+
+  const districtAnalystPermissionCodes = [
+    'dashboard.read',
+
+    'region.read',
+    'district.read',
+    'branch.read',
+
+    'product.read',
+    'target.read',
+
+    'activity.read',
+    'submission.read',
+    'followup.read',
+
+    'report.read',
+    'report.export',
+
+    'alert.read',
+    'ai.read',
+  ] as const;
+
+  // --------------------------------------------------------------------------
+  // BRANCH MANAGER
+  // --------------------------------------------------------------------------
+
+  const branchManagerPermissionCodes = [
+    'dashboard.read',
+
+    'region.read',
+    'district.read',
+    'branch.read',
+
+    'product.read',
+    'target.read',
+
+    'activity.read',
+
+    'submission.read',
+    'submission.review',
+    'submission.approve',
+
+    'followup.read',
+    'followup.update',
+
+    'report.read',
+    'report.export',
+
+    'alert.read',
+    'alert.update',
+    'ai.read',
+  ] as const;
+
+  // --------------------------------------------------------------------------
+  // DIGITAL RESKILLED STAFF
+  // --------------------------------------------------------------------------
+
+  const digitalStaffPermissionCodes = [
+    'dashboard.read',
+
+    // Reference data used by operational forms.
+    'region.read',
+    'district.read',
+    'branch.read',
+    'product.read',
+    'target.read',
+
+    // Own operational activity workflow.
+    'activity.create',
+    'activity.read',
+    'activity.update',
+
+    // Own daily submission workflow.
+    'submission.read',
+    'submission.submit',
+
+    // Customer follow-up workflow.
+    'followup.create',
+    'followup.read',
+    'followup.update',
+
+    'alert.read',
+  ] as const;
+
+  // --------------------------------------------------------------------------
+  // AUDITOR
+  // --------------------------------------------------------------------------
+
+  const auditorPermissionCodes = [
+    'dashboard.read',
+
+    'region.read',
+    'district.read',
+    'branch.read',
+
+    'user.read',
+    'role.read',
+    'permission.read',
+
+    'product.read',
+    'target.read',
+
+    'activity.read',
+    'submission.read',
+    'followup.read',
+
+    'report.read',
+    'report.export',
+
+    'alert.read',
+    'ai.read',
+    'audit.read',
+    'settings.read',
+  ] as const;
+
+  // --------------------------------------------------------------------------
+  // READ ONLY
+  // --------------------------------------------------------------------------
+
+  const readOnlyPermissionCodes = [
+    'dashboard.read',
+
+    'region.read',
+    'district.read',
+    'branch.read',
+
+    'product.read',
+    'target.read',
+
+    'activity.read',
+    'submission.read',
+    'followup.read',
+
+    'report.read',
+    'alert.read',
+    'ai.read',
+  ] as const;
+
+  // --------------------------------------------------------------------------
+  // APPLY ROLE-PERMISSION MATRIX
+  // --------------------------------------------------------------------------
+
+  await assignPermissionsToRole('SUPER_ADMIN', superAdminPermissionCodes);
+
+  await assignPermissionsToRole('SYSTEM_ADMIN', systemAdminPermissionCodes);
+
+  await assignPermissionsToRole(
+    'REGIONAL_MANAGER',
+    regionalManagerPermissionCodes,
   );
 
+  await assignPermissionsToRole(
+    'REGIONAL_ANALYST',
+    regionalAnalystPermissionCodes,
+  );
+
+  await assignPermissionsToRole(
+    'DISTRICT_MANAGER',
+    districtManagerPermissionCodes,
+  );
+
+  await assignPermissionsToRole(
+    'DISTRICT_ANALYST',
+    districtAnalystPermissionCodes,
+  );
+
+  await assignPermissionsToRole('BRANCH_MANAGER', branchManagerPermissionCodes);
+
+  await assignPermissionsToRole(
+    'DIGITAL_RESKILLED_STAFF',
+    digitalStaffPermissionCodes,
+  );
+
+  await assignPermissionsToRole('AUDITOR', auditorPermissionCodes);
+
+  await assignPermissionsToRole('READ_ONLY', readOnlyPermissionCodes);
+
+  console.log('Role-permission matrix seeded successfully.');
+
   // ==========================================================================
-  // 5. DIGITAL PRODUCTS / CHANNELS
+  // 6. DIGITAL PRODUCTS / CHANNELS
   // ==========================================================================
 
   const products = [
@@ -1329,7 +1630,7 @@ async function main() {
   console.log(`Seeded ${products.length} products.`);
 
   // ============================================================================
-  // DEVELOPMENT PERFORMANCE DATA
+  // 7. DEVELOPMENT PERFORMANCE DATA
   // ============================================================================
 
   console.log('Seeding development performance data...');
@@ -1460,6 +1761,58 @@ async function main() {
 
       targetValue: 500,
     },
+  });
+
+  await prisma.targetAssignment.createMany({
+    data: [
+      {
+        targetId: activationTarget.id,
+
+        scopeType: 'BRANCH',
+
+        regionId: centralRegion.id,
+
+        districtId: addisDistrict.id,
+
+        branchId: boleBranch.id,
+
+        productId: cbeBirrProduct.id,
+
+        targetValue: 220,
+      },
+
+      {
+        targetId: activationTarget.id,
+
+        scopeType: 'BRANCH',
+
+        regionId: centralRegion.id,
+
+        districtId: addisDistrict.id,
+
+        branchId: boleBranch.id,
+
+        productId: mobileBankingProduct.id,
+
+        targetValue: 170,
+      },
+
+      {
+        targetId: activationTarget.id,
+
+        scopeType: 'BRANCH',
+
+        regionId: centralRegion.id,
+
+        districtId: addisDistrict.id,
+
+        branchId: boleBranch.id,
+
+        productId: cardProduct.id,
+
+        targetValue: 110,
+      },
+    ],
   });
 
   console.log('Development activation target seeded.');
@@ -1881,7 +2234,7 @@ async function main() {
   console.log('Development product performance and follow-up data seeded.');
 
   // ==========================================================================
-  // 6. INITIAL SUPER ADMIN USER
+  // 8. INITIAL SUPER ADMIN USER
   // ==========================================================================
 
   const initialAdminPassword =
@@ -1926,7 +2279,7 @@ async function main() {
   console.log('Initial administrator user created/verified.');
 
   // ==========================================================================
-  // 7. ASSIGN SUPER_ADMIN ROLE TO INITIAL ADMIN
+  // 9. ASSIGN SUPER_ADMIN ROLE TO INITIAL ADMIN
   // ==========================================================================
 
   const existingAdminRole = await prisma.userRole.findFirst({
@@ -1954,7 +2307,7 @@ async function main() {
   console.log('Assigned SUPER_ADMIN role to administrator.');
 
   // ==========================================================================
-  // 8. SYSTEM SETTINGS
+  // 10. SYSTEM SETTINGS
   // ==========================================================================
 
   const systemSettings = [
@@ -2055,7 +2408,7 @@ async function main() {
   console.log(`Seeded ${systemSettings.length} system settings.`);
 
   // ==========================================================================
-  // COMPLETE
+  // 11. COMPLETE
   // ==========================================================================
 
   console.log('');
