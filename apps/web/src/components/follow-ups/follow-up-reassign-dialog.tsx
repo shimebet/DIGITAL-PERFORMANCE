@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import axios from "axios";
 
 import {
@@ -60,10 +60,7 @@ export function FollowUpReassignDialog({
   const [replacementId, setReplacementId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setReplacementId("");
-    setError(null);
-  }, [open, followUp?.id]);
+
 
   const staffQuery = useQuery({
     queryKey: ["follow-ups", "reassignment-options", followUp?.id],

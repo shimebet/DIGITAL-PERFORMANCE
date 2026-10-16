@@ -19,7 +19,6 @@ import { AddOutlined, DeleteOutlined } from "@mui/icons-material";
 
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 
-import type { FieldErrors } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -276,10 +275,6 @@ export function ActivityFormDialog({
       return;
     }
 
-    setSubmitError(null);
-
-    setValidationAttempted(false);
-
     if (activity) {
       reset({
         activityDate: activity.activityDate.slice(0, 10),
@@ -367,7 +362,7 @@ export function ActivityFormDialog({
     }
   }
 
-  function invalidSubmit(_errors: FieldErrors<ActivityFormValues>) {
+  function invalidSubmit() {
     setValidationAttempted(true);
 
     setSubmitError(null);

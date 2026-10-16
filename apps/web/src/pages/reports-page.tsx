@@ -639,6 +639,8 @@ const reportResult = useQuery({
 
 // Remember which successful report update has already
 // triggered a history refresh.
+const historyUserId = user?.id;
+
 const lastHistorySyncRef = useRef<{
   userId: string | undefined;
   dataUpdatedAt: number;
@@ -648,7 +650,7 @@ useEffect(() => {
   // Do not refresh history before the user is available
   // or before the report query succeeds.
   if (
-    !user ||
+    !historyUserId ||
     !reportResult.isSuccess ||
     !reportResult.dataUpdatedAt
   ) {
@@ -661,7 +663,7 @@ useEffect(() => {
   // Avoid refreshing history repeatedly for the same
   // successful report update.
   if (
-    lastSync?.userId === user.id &&
+    lastSync?.userId === historyUserId &&
     lastSync.dataUpdatedAt ===
       reportResult.dataUpdatedAt
   ) {
@@ -671,7 +673,7 @@ useEffect(() => {
   // Record the successful update before invalidating
   // the history query.
   lastHistorySyncRef.current = {
-    userId: user.id,
+    userId: historyUserId,
     dataUpdatedAt:
       reportResult.dataUpdatedAt,
   };
@@ -684,7 +686,7 @@ useEffect(() => {
     ],
   });
 }, [
-  user?.id,
+  historyUserId,
   reportResult.isSuccess,
   reportResult.dataUpdatedAt,
   queryClient,
@@ -785,10 +787,7 @@ const report =
     const now =
       new Date();
 
-    let start =
-      new Date(
-        now,
-      );
+    let start: Date;
 
     const end =
       new Date(

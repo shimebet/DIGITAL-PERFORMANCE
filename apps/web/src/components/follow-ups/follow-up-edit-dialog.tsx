@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import axios from "axios";
 
 import {
@@ -87,12 +87,7 @@ export function FollowUpEditDialog({
   const [values, setValues] = useState(() => initialValues(followUp));
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setValues(initialValues(followUp));
-      setError(null);
-    }
-  }, [open, followUp]);
+
 
 const productsQuery = useQuery({
     queryKey: ["follow-ups", "product-options"],

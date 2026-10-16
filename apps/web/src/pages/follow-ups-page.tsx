@@ -795,8 +795,8 @@ export function FollowUpsPage() {
           </Button>
         </DialogActions>
       </Dialog>
-{canUpdate && (
-        <FollowUpEditDialog
+{canUpdate && editingFollowUp !== null && (
+  <FollowUpEditDialog
           open={editingFollowUp !== null}
           followUp={editingFollowUp}
           onClose={() => setEditingFollowUp(null)}
@@ -805,8 +805,8 @@ export function FollowUpsPage() {
         />
       )}
 
-      {canReassign && (
-        <FollowUpReassignDialog
+      {canReassign && reassigningFollowUp !== null && (
+  <FollowUpReassignDialog
           open={reassigningFollowUp !== null}
           followUp={reassigningFollowUp}
           onClose={() => setReassigningFollowUp(null)}

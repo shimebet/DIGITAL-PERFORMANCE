@@ -345,7 +345,10 @@ export function ProductsPage() {
     retry: false,
   });
 
-  const products: Product[] = productsQuery.data ?? [];
+  const products: Product[] = useMemo(
+    () => productsQuery.data ?? [],
+    [productsQuery.data],
+  );
 
   const categories = useMemo(
     () =>

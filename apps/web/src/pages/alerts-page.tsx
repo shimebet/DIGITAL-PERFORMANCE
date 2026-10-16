@@ -448,8 +448,14 @@ export function AlertsPage() {
     });
 
   const alerts =
-    alertsQuery.data ??
-    [];
+    useMemo(
+      () =>
+        alertsQuery.data ??
+        [],
+      [
+        alertsQuery.data,
+      ],
+    );
 
   // ==========================================================================
   // SUMMARY

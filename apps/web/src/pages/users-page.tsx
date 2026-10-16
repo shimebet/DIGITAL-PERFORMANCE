@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import axios from "axios";
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, IconButton,
@@ -212,8 +212,23 @@ export function UsersPage() {
       </CardContent>
     </Card>
 
-    <UserFormDialog open={dialogOpen} user={editingUser} saving={saveMutation.isPending} onClose={closeDialog} onSave={handleSave} />
-    <ManageUserRolesDialog open={!!rolesUser} user={rolesUser} canAssign={canAssignRoles} onClose={() => setRolesUser(null)} />
+    {dialogOpen && (
+      <UserFormDialog
+        open={dialogOpen}
+        user={editingUser}
+        saving={saveMutation.isPending}
+        onClose={closeDialog}
+        onSave={handleSave}
+      />
+    )}
+    {rolesUser && (
+      <ManageUserRolesDialog
+        open={true}
+        user={rolesUser}
+        canAssign={canAssignRoles}
+        onClose={() => setRolesUser(null)}
+      />
+    )}
     {resetUser && <ResetUserPasswordDialog user={resetUser} onClose={() => setResetUser(null)} onSuccess={actionSuccess} />}
     {deleteUser && <DeleteUserDialog user={deleteUser} onClose={() => setDeleteUser(null)} onSuccess={actionSuccess} />}
   </Box>;

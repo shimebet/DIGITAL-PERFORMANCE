@@ -20,6 +20,7 @@ import {
 import {
   Controller,
   useForm,
+  useWatch,
 } from "react-hook-form";
 
 import {
@@ -152,7 +153,6 @@ export function TargetAssignmentDialog({
     control,
     handleSubmit,
     reset,
-    watch,
     setValue,
 
     formState: {
@@ -193,24 +193,28 @@ export function TargetAssignmentDialog({
     });
 
   const scopeType =
-    watch(
-      "scopeType",
-    );
+    useWatch({
+      control,
+      name: "scopeType",
+    });
 
   const regionId =
-    watch(
-      "regionId",
-    );
+    useWatch({
+      control,
+      name: "regionId",
+    });
 
   const districtId =
-    watch(
-      "districtId",
-    );
+    useWatch({
+      control,
+      name: "districtId",
+    });
 
   const branchId =
-    watch(
-      "branchId",
-    );
+    useWatch({
+      control,
+      name: "branchId",
+    });
 
   // ==========================================================================
   // AUTHENTICATED ORGANIZATION SCOPE

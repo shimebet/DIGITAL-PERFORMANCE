@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useState } from "react";
 import axios from "axios";
 
 import {
@@ -67,21 +67,17 @@ export function FollowUpStatusDialog({
   onSubmit,
   submitting,
 }: Props) {
-  const [status, setStatus] = useState<FollowUpStatus>("OPEN");
+  const [status, setStatus] = useState<FollowUpStatus>(
+    () => followUp?.status ?? "OPEN",
+  );
   const [note, setNote] = useState("");
-  const [outcome, setOutcome] = useState("");
-  const [nextFollowUpDate, setNextFollowUpDate] = useState("");
+  const [outcome, setOutcome] = useState(
+    () => followUp?.outcome ?? "",
+  );
+  const [nextFollowUpDate, setNextFollowUpDate] = useState(
+    () => toDateInput(followUp?.nextFollowUpDate),
+  );
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    setStatus(followUp?.status ?? "OPEN");
-    setNote("");
-    setOutcome(followUp?.outcome ?? "");
-    setNextFollowUpDate(toDateInput(followUp?.nextFollowUpDate));
-    setError(null);
-  }, [open, followUp]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

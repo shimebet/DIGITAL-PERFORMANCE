@@ -992,16 +992,18 @@ function openEdit(activity: Activity) {
           CREATE / VIEW / EDIT DIALOG
       ===================================================================== */}
 
-      <ActivityFormDialog
-        open={dialogOpen}
-        mode={dialogMode}
-        activity={selectedActivity}
-        onClose={closeDialog}
-        onSubmit={async (values) => {
-          await saveMutation.mutateAsync(values);
-        }}
-        submitting={saveMutation.isPending}
-      />
+      {dialogOpen && (
+        <ActivityFormDialog
+          open={dialogOpen}
+          mode={dialogMode}
+          activity={selectedActivity}
+          onClose={closeDialog}
+          onSubmit={async (values) => {
+            await saveMutation.mutateAsync(values);
+          }}
+          submitting={saveMutation.isPending}
+        />
+      )}
     </Box>
   );
 }

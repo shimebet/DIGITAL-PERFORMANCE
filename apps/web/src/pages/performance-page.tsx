@@ -2,7 +2,6 @@
 
 import axios from 'axios';
 import {
-  useEffect,
   useState,
 } from 'react';
 
@@ -188,30 +187,21 @@ export function PerformancePage() {
   // LOCAL BRANCH DRILL-DOWN
   // ==========================================================================
 
-  const [
-    selectedBranchId,
-    setSelectedBranchId,
-  ] =
-    useState<
-      string | undefined
-    >(
-      branchId ||
-        undefined,
-    );
+  const filterContext = JSON.stringify([
+    regionId,
+    districtId,
+    branchId,
+  ]);
 
-  useEffect(
-    () => {
-      setSelectedBranchId(
-        branchId ||
-          undefined,
-      );
-    },
-    [
-      regionId,
-      districtId,
-      branchId,
-    ],
-  );
+  const [branchSelection, setBranchSelection] = useState<{
+    filterContext: string;
+    branchId: string | undefined;
+  } | null>(null);
+
+  const selectedBranchId =
+    branchSelection?.filterContext === filterContext
+      ? branchSelection.branchId
+      : branchId || undefined;
 
   // ==========================================================================
   // API QUERY
@@ -926,12 +916,13 @@ export function PerformancePage() {
                 onSelectBranch={(
                   selectedId,
                 ) => {
-                  setSelectedBranchId(
-                    selectedBranchId ===
-                      selectedId
-                      ? undefined
-                      : selectedId,
-                  );
+                  setBranchSelection({
+                    filterContext,
+                    branchId:
+                      selectedBranchId === selectedId
+                        ? undefined
+                        : selectedId,
+                  });
                 }}
               />
             </Box>

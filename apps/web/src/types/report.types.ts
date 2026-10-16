@@ -5,8 +5,7 @@ import type {
   ProductPerformanceRow,
 } from './dashboard.types';
 
-export interface ReportQuery
-  extends DashboardQuery {}
+export type ReportQuery = DashboardQuery;
 
 export interface PerformanceReport {
   generatedAt: string;

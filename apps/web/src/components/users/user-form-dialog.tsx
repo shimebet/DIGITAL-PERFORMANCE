@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import axios from "axios";
 
 import {
@@ -106,7 +106,26 @@ export function UserFormDialog({
   onClose,
   onSave,
 }: UserFormDialogProps) {
-  const [form, setForm] = useState<UserForm>(emptyForm);
+  const [form, setForm] = useState<UserForm>(() =>
+    user
+      ? {
+          username: user.username,
+          password: "",
+          firstName: user.firstName,
+          middleName: user.middleName ?? "",
+          lastName: user.lastName,
+          email: user.email ?? "",
+          phone: user.phone ?? "",
+          regionId: "",
+          districtId: "",
+          branchId: user.staffProfile?.branchId ?? "",
+          employeeNumber: user.staffProfile?.employeeNumber ?? "",
+          jobTitle: user.staffProfile?.jobTitle ?? "",
+          digitalReskilled: user.staffProfile?.digitalReskilled ?? false,
+          status: user.status,
+        }
+      : { ...emptyForm },
+  );
   const [error, setError] = useState<string | null>(null);
 
   const regionsQuery = useQuery({
@@ -131,59 +150,26 @@ export function UserFormDialog({
   const districts: District[] = districtsQuery.data ?? [];
   const branches: Branch[] = branchesQuery.data ?? [];
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
+  const selectedBranch = branches.find(
+    (item) => item.id === form.branchId,
+  );
 
-    if (!user) {
-      setForm({ ...emptyForm });
-      setError(null);
-      return;
-    }
+  const selectedDistrict = districts.find(
+    (item) => item.id === selectedBranch?.districtId,
+  );
 
-    const branchId = user.staffProfile?.branchId ?? "";
-
-    const branch = branches.find(
-      (item) => item.id === branchId,
-    );
-
-    const district = districts.find(
-      (item) => item.id === branch?.districtId,
-    );
-
-    setForm({
-      username: user.username,
-      password: "",
-      firstName: user.firstName,
-      middleName: user.middleName ?? "",
-      lastName: user.lastName,
-      email: user.email ?? "",
-      phone: user.phone ?? "",
-      regionId: district?.regionId ?? "",
-      districtId: branch?.districtId ?? "",
-      branchId,
-      employeeNumber:
-        user.staffProfile?.employeeNumber ?? "",
-      jobTitle: user.staffProfile?.jobTitle ?? "",
-      digitalReskilled:
-        user.staffProfile?.digitalReskilled ?? false,
-      status: user.status,
-    });
-
-    setError(null);
-  }, [open, user, branches, districts]);
-
+  const selectedRegionId = form.regionId || selectedDistrict?.regionId || "";
+  const selectedDistrictId = form.districtId || selectedBranch?.districtId || "";
   const availableDistricts = districts.filter(
     (district) =>
-      district.regionId === form.regionId &&
+      district.regionId === selectedRegionId &&
       (district.status === "ACTIVE" ||
-        district.id === form.districtId),
+        district.id === selectedDistrictId),
   );
 
   const availableBranches = branches.filter(
     (branch) =>
-      branch.districtId === form.districtId &&
+      branch.districtId === selectedDistrictId &&
       (branch.status === "ACTIVE" ||
         branch.id === form.branchId),
   );
@@ -245,7 +231,7 @@ export function UserFormDialog({
       }
     }
 
-    if (form.branchId && (!form.regionId || !form.districtId)) {
+    if (form.branchId && (!selectedRegionId || !selectedDistrictId)) {
       setError("Select a valid region, district, and branch.");
       return;
     }
@@ -420,7 +406,7 @@ export function UserFormDialog({
               select
               label="Region"
               fullWidth
-              value={form.regionId}
+              value={selectedRegionId}
               disabled={loading}
               onChange={(event) => {
                 setForm((previous) => ({
@@ -437,7 +423,7 @@ export function UserFormDialog({
                 .filter(
                   (region) =>
                     region.status === "ACTIVE" ||
-                    region.id === form.regionId,
+                    region.id === selectedRegionId,
                 )
                 .map((region) => (
                   <MenuItem key={region.id} value={region.id}>
@@ -450,8 +436,8 @@ export function UserFormDialog({
               select
               label="District"
               fullWidth
-              disabled={!form.regionId || loading}
-              value={form.districtId}
+              disabled={!selectedRegionId || loading}
+              value={selectedDistrictId}
               onChange={(event) => {
                 setForm((previous) => ({
                   ...previous,
@@ -473,7 +459,7 @@ export function UserFormDialog({
               select
               label="Branch"
               fullWidth
-              disabled={!form.districtId || loading}
+              disabled={!selectedDistrictId || loading}
               value={form.branchId}
               onChange={(event) =>
                 updateForm("branchId", event.target.value)

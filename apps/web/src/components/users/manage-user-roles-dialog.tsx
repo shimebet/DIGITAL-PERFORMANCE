@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Stack, TextField, Tooltip, Typography } from "@mui/material";
@@ -39,12 +39,6 @@ export function ManageUserRolesDialog({ open, user, canAssign, onClose }: Props)
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setRoleId(""); setScopeType("BRANCH"); setRegionId("");
-      setDistrictId(""); setBranchId(""); setError(null); setNotice(null);
-    }
-  }, [open, user?.id]);
 
   const roles = useQuery({ queryKey: ["role-options"], queryFn: getRolesApi, enabled: open });
   const assignments = useQuery({
