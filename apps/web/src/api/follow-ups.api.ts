@@ -1,0 +1,137 @@
+import { apiClient } from "./api-client";
+import { API_ENDPOINTS } from "./endpoints";
+
+import type {
+  FollowUp,
+  FollowUpSummary,
+  CreateFollowUpRequest,
+  UpdateFollowUpRequest,
+  UpdateFollowUpStatusRequest,
+  ReassignFollowUpRequest,
+} from "../types/follow-up.types";
+
+const baseUrl = API_ENDPOINTS.followUps;
+
+export async function getFollowUpsApi(): Promise<FollowUp[]> {
+  const response = await apiClient.get<FollowUp[]>(baseUrl);
+  return response.data;
+}
+
+export async function getMyFollowUpsApi(): Promise<FollowUp[]> {
+  const response = await apiClient.get<FollowUp[]>(
+    API_ENDPOINTS.myFollowUps,
+  );
+  return response.data;
+}
+
+export async function getMyOverdueFollowUpsApi(): Promise<FollowUp[]> {
+  const response = await apiClient.get<FollowUp[]>(
+    `${API_ENDPOINTS.myFollowUps}/overdue`,
+  );
+  return response.data;
+}
+
+export async function getFollowUpSummaryApi(): Promise<FollowUpSummary> {
+  const response = await apiClient.get<FollowUpSummary>(
+    API_ENDPOINTS.followUpSummary,
+  );
+  return response.data;
+}
+
+export async function getFollowUpApi(id: string): Promise<FollowUp> {
+  const response = await apiClient.get<FollowUp>(
+    `${baseUrl}/${encodeURIComponent(id)}`,
+  );
+  return response.data;
+}
+
+export async function createFollowUpApi(
+  payload: CreateFollowUpRequest,
+): Promise<FollowUp> {
+  const response = await apiClient.post<FollowUp>(
+    baseUrl,
+    payload,
+  );
+  return response.data;
+}
+
+export async function updateFollowUpApi(
+  id: string,
+  payload: UpdateFollowUpRequest,
+): Promise<FollowUp> {
+  const response = await apiClient.patch<FollowUp>(
+    `${baseUrl}/${encodeURIComponent(id)}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function updateFollowUpStatusApi(
+  id: string,
+  payload: UpdateFollowUpStatusRequest,
+): Promise<FollowUp> {
+  const response = await apiClient.patch<FollowUp>(
+    `${baseUrl}/${encodeURIComponent(id)}/status`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function enableFollowUpApi(
+  id: string,
+): Promise<FollowUp> {
+  const response = await apiClient.patch<FollowUp>(
+    `${baseUrl}/${encodeURIComponent(id)}/enable`,
+  );
+
+  return response.data;
+}
+
+export async function disableFollowUpApi(
+  id: string,
+): Promise<FollowUp> {
+  const response = await apiClient.patch<FollowUp>(
+    `${baseUrl}/${encodeURIComponent(id)}/disable`,
+  );
+
+  return response.data;
+}
+
+export async function deleteFollowUpApi(
+  id: string,
+): Promise<FollowUp> {
+  const response = await apiClient.delete<FollowUp>(
+    `${baseUrl}/${encodeURIComponent(id)}`,
+  );
+
+  return response.data;
+}
+
+export async function reassignFollowUpApi(
+  id: string,
+  payload: ReassignFollowUpRequest,
+): Promise<FollowUp> {
+  const response = await apiClient.patch<FollowUp>(
+    `${baseUrl}/${encodeURIComponent(id)}/reassign`,
+    payload,
+  );
+
+  return response.data;
+}
+
+export interface FollowUpReassignmentOption {
+  id: string;
+  username: string;
+  firstName: string | null;
+  lastName: string | null;
+}
+
+export async function getFollowUpReassignmentOptionsApi(
+  id: string,
+): Promise<FollowUpReassignmentOption[]> {
+  const response = await apiClient.get<FollowUpReassignmentOption[]>(
+    `${baseUrl}/${encodeURIComponent(id)}/reassignment-options`,
+  );
+
+  return response.data;
+}

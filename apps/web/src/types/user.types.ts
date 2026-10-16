@@ -19,6 +19,7 @@ export interface UserBranch extends UserOrganization {
 
 export interface UserStaffProfile {
   branchId: string;
+  status: "ACTIVE" | "INACTIVE";
   employeeNumber?: string | null;
   jobTitle?: string | null;
   digitalReskilled?: boolean;

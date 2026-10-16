@@ -1,0 +1,20 @@
+import { getUsersApi } from "./users.api";
+
+import type { User } from "../types/user.types";
+
+export async function getFollowUpStaffApi(): Promise<User[]> {
+  const users = await getUsersApi();
+
+  return users
+    .filter(
+      (user) =>
+        user.status === "ACTIVE" &&
+        user.staffProfile?.status === "ACTIVE" &&
+        Boolean(user.staffProfile?.branchId),
+    )
+    .sort((a, b) =>
+      `${a.firstName} ${a.lastName}`.localeCompare(
+        `${b.firstName} ${b.lastName}`,
+      ),
+    );
+}

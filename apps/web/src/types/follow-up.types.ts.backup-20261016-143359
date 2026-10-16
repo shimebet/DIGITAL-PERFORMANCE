@@ -1,0 +1,124 @@
+export type FollowUpStatus =
+  | "OPEN"
+  | "CONTACTED"
+  | "RESCHEDULED"
+  | "CONVERTED"
+  | "NOT_INTERESTED"
+  | "UNREACHABLE"
+  | "CLOSED";
+
+export type FollowUpPriority =
+  | "LOW"
+  | "MEDIUM"
+  | "HIGH"
+  | "URGENT";
+
+export interface FollowUpUser {
+  id: string;
+  username: string;
+  firstName: string | null;
+  lastName: string | null;
+}
+
+export interface FollowUpProduct {
+  id: string;
+  name: string;
+}
+
+export interface FollowUpBranch {
+  id: string;
+  name: string;
+  district?: {
+    id: string;
+    name: string;
+    region?: {
+      id: string;
+      name: string;
+    };
+  };
+}
+
+export interface FollowUp {
+  id: string;
+  activityId: string | null;
+  branchId: string;
+  productId: string | null;
+  createdByUserId: string;
+  assignedToUserId: string;
+
+  customerReference: string | null;
+  customerNameMasked: string | null;
+  contactReference: string | null;
+  reason: string | null;
+
+  priority: FollowUpPriority;
+  status: FollowUpStatus;
+
+  followUpDate: string;
+  nextFollowUpDate: string | null;
+  completedAt: string | null;
+
+  outcome: string | null;
+  remarks: string | null;
+
+  isEnabled: boolean;
+  disabledAt: string | null;
+  disabledByUserId: string | null;
+  deletedAt: string | null;
+  deletedByUserId: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+
+  product?: FollowUpProduct | null;
+  branch?: FollowUpBranch;
+  assignedTo?: FollowUpUser;
+  createdBy?: FollowUpUser;
+}
+
+export interface FollowUpSummary {
+  total: number;
+  open: number;
+  contacted: number;
+  rescheduled: number;
+  converted: number;
+  overdue: number;
+}
+
+export interface CreateFollowUpRequest {
+  activityId?: string;
+  productId?: string;
+  assignedToUserId: string;
+
+  customerReference?: string;
+  customerNameMasked?: string;
+  contactReference?: string;
+  reason?: string;
+
+  priority: FollowUpPriority;
+  followUpDate: string;
+  remarks?: string;
+}
+
+export interface UpdateFollowUpRequest {
+  productId?: string;
+
+  customerReference?: string;
+  customerNameMasked?: string;
+  contactReference?: string;
+  reason?: string;
+
+  priority?: FollowUpPriority;
+  followUpDate?: string;
+  nextFollowUpDate?: string;
+
+  remarks?: string;
+  outcome?: string;
+}
+
+export interface UpdateFollowUpStatusRequest {
+  status: FollowUpStatus;
+  note?: string;
+  outcome?: string;
+  nextFollowUpDate?: string;
+}
