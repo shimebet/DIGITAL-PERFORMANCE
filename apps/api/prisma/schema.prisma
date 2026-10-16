@@ -320,6 +320,8 @@ model User {
 
   auditLogs AuditLog[]
 
+  savedReports SavedReport[]
+
   sessions UserSession[]
 
   refreshTokens RefreshToken[]
@@ -1189,4 +1191,30 @@ model SystemSetting {
 
   @@index([category])
   @@map("system_settings")
+}
+
+// ============================================================================
+// SAVED REPORT CONFIGURATIONS
+// ============================================================================
+
+model SavedReport {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+
+  name String @db.VarChar(191)
+
+  reportType String @default("PERFORMANCE") @db.VarChar(50)
+
+  filters Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId])
+  @@index([userId, reportType])
+  @@index([createdAt])
+  @@map("saved_reports")
 }

@@ -44,21 +44,25 @@ export class DashboardService {
     // DATE FILTER
     // ==========================================================================
 
-    if (query.startDate) {
-      where.submissionDate = {
-        ...(where.submissionDate ?? {}),
+if (query.startDate) {
+  where.submissionDate = {
+    ...(where.submissionDate ?? {}),
+    gte: new Date(query.startDate),
+  };
+}
 
-        gte: new Date(query.startDate),
-      };
-    }
+if (query.endDate) {
+  const endExclusive = new Date(query.endDate);
 
-    if (query.endDate) {
-      where.submissionDate = {
-        ...(where.submissionDate ?? {}),
+  endExclusive.setUTCDate(
+    endExclusive.getUTCDate() + 1,
+  );
 
-        lte: new Date(query.endDate),
-      };
-    }
+  where.submissionDate = {
+    ...(where.submissionDate ?? {}),
+    lt: endExclusive,
+  };
+}
 
     // ==========================================================================
     // DIGITAL STAFF
@@ -294,9 +298,17 @@ export class DashboardService {
     // OVERDUE
     // ==========================================================================
 
-    const today = new Date();
+// Today's Ethiopia-local calendar date, represented
+// as UTC midnight for comparison with MySQL DATE columns.
+const now = new Date();
 
-    today.setHours(0, 0, 0, 0);
+const ethiopiaToday = new Date(
+  now.getTime() + 3 * 60 * 60 * 1000,
+)
+  .toISOString()
+  .slice(0, 10);
+
+const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
 
     const overdue = await this.prisma.followUp.count({
       where: {

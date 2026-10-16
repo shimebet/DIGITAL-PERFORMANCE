@@ -2639,15 +2639,17 @@ case 'MANAGEMENT_FOCUS': {
         user:
             AuthenticatedUser,
     ) {
-        const today =
-            new Date();
+// Ethiopia's current calendar date.
+// followUpDate is a MySQL DATE column.
+const now = new Date();
 
-        today.setHours(
-            0,
-            0,
-            0,
-            0,
-        );
+const ethiopiaToday = new Date(
+  now.getTime() + 3 * 60 * 60 * 1000,
+)
+  .toISOString()
+  .slice(0, 10);
+
+const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
 
         const followUps =
             await this.prisma.followUp.findMany({

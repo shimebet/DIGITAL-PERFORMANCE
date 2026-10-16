@@ -274,15 +274,17 @@ export class FollowUpsService {
   async findMyOverdue(
     user: AuthenticatedUser,
   ) {
-    const today =
-      new Date();
+// Today's Ethiopia-local calendar date, represented
+// as UTC midnight for comparison with MySQL DATE columns.
+const now = new Date();
 
-    today.setHours(
-      0,
-      0,
-      0,
-      0,
-    );
+const ethiopiaToday = new Date(
+  now.getTime() + 3 * 60 * 60 * 1000,
+)
+  .toISOString()
+  .slice(0, 10);
+
+const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
 
     return this.prisma.followUp.findMany({
       where: {
@@ -801,15 +803,17 @@ export class FollowUpsService {
         user,
       );
 
-    const today =
-      new Date();
+// Today's Ethiopia-local calendar date, represented
+// as UTC midnight for comparison with MySQL DATE columns.
+const now = new Date();
 
-    today.setHours(
-      0,
-      0,
-      0,
-      0,
-    );
+const ethiopiaToday = new Date(
+  now.getTime() + 3 * 60 * 60 * 1000,
+)
+  .toISOString()
+  .slice(0, 10);
+
+const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
 
     return {
       total:

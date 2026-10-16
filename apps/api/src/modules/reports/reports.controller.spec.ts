@@ -5,6 +5,7 @@ import type { Response } from 'express';
 
 import { ReportsController } from './reports.controller.js';
 import { ReportsService } from './reports.service.js';
+import { ReportAuditService } from './report-audit.service.js';
 
 describe('ReportsController', () => {
   let controller: ReportsController;
@@ -13,6 +14,10 @@ describe('ReportsController', () => {
     getPerformanceReport: vi.fn(),
     exportCsv: vi.fn(),
     exportExcel: vi.fn(),
+  };
+
+  const reportAuditServiceMock = {
+    findMyHistory: vi.fn(),
   };
 
   const responseMock = {
@@ -25,6 +30,7 @@ describe('ReportsController', () => {
 
     controller = new ReportsController(
       reportsServiceMock as unknown as ReportsService,
+      reportAuditServiceMock as unknown as ReportAuditService,
     );
   });
 

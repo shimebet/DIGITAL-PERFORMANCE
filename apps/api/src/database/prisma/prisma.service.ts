@@ -34,14 +34,18 @@ export class PrismaService
     // PRISMA DRIVER ADAPTER
     // ==========================================================================
 
-    const adapter = new PrismaMariaDb({
-      host,
-      port,
-      user,
-      password,
-      database,
-      connectionLimit,
-    });
+const adapter = new PrismaMariaDb({
+  host,
+  port,
+  user,
+  password,
+  database,
+  connectionLimit,
+
+  // Local development only.
+  // Allows MySQL caching_sha2_password RSA key retrieval.
+  allowPublicKeyRetrieval: true,
+});
 
     super({
       adapter,

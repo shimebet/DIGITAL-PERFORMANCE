@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReportsService } from './reports.service.js';
 
 import { PerformanceService } from '../performance/performance.service.js';
+import { ReportAuditService } from './report-audit.service.js';
 
 describe('ReportsService', () => {
   let service: ReportsService;
@@ -13,13 +14,15 @@ describe('ReportsService', () => {
     dailyTrend: vi.fn(),
     productComparison: vi.fn(),
   };
-
+const reportAuditServiceMock = {
+  recordReport: vi.fn().mockResolvedValue(undefined),
+};
   beforeEach(() => {
     vi.resetAllMocks();
-
-    service = new ReportsService(
-      performanceServiceMock as unknown as PerformanceService,
-    );
+service = new ReportsService(
+  performanceServiceMock as unknown as PerformanceService,
+  reportAuditServiceMock as unknown as ReportAuditService,
+);
   });
 
   it('should be defined', () => {

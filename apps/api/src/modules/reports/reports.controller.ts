@@ -1,3 +1,4 @@
+
 import {
   Controller,
   Get,
@@ -29,21 +30,27 @@ import type {
   AuthenticatedUser,
 } from '../auth/interfaces/authenticated-user.interface.js';
 
+import {
+  ReportAuditService,
+} from './report-audit.service.js';
+
+
+
+
+
+
 @Controller('reports')
 export class ReportsController {
   constructor(
-    private readonly reportsService:
-      ReportsService,
+    private readonly reportsService: ReportsService,
+    private readonly reportAuditService: ReportAuditService,
   ) {}
 
   @Get('performance')
   @Permissions('report.read')
   getPerformance(
-    @Query()
-    query: ReportQueryDto,
-
-    @CurrentUser()
-    user: AuthenticatedUser,
+    @Query() query: ReportQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.reportsService.getPerformanceReport(
       query,
@@ -54,20 +61,14 @@ export class ReportsController {
   @Get('performance/csv')
   @Permissions('report.export')
   async exportCsv(
-    @Query()
-    query: ReportQueryDto,
-
-    @CurrentUser()
-    user: AuthenticatedUser,
-
-    @Res()
-    response: Response,
+    @Query() query: ReportQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() response: Response,
   ) {
-    const csv =
-      await this.reportsService.exportCsv(
-        query,
-        user,
-      );
+    const csv = await this.reportsService.exportCsv(
+      query,
+      user,
+    );
 
     response.setHeader(
       'Content-Type',
@@ -79,28 +80,20 @@ export class ReportsController {
       'attachment; filename="performance-report.csv"',
     );
 
-    response.send(
-      csv,
-    );
+    response.send(csv);
   }
 
   @Get('performance/xlsx')
   @Permissions('report.export')
   async exportExcel(
-    @Query()
-    query: ReportQueryDto,
-
-    @CurrentUser()
-    user: AuthenticatedUser,
-
-    @Res()
-    response: Response,
+    @Query() query: ReportQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() response: Response,
   ) {
-    const file =
-      await this.reportsService.exportExcel(
-        query,
-        user,
-      );
+    const file = await this.reportsService.exportExcel(
+      query,
+      user,
+    );
 
     response.setHeader(
       'Content-Type',
@@ -112,8 +105,16 @@ export class ReportsController {
       'attachment; filename="performance-report.xlsx"',
     );
 
-    response.send(
-      file,
-    );
+    response.send(file);
   }
+  @Get('history')
+@Permissions('report.read')
+getMyReportHistory(
+  @CurrentUser()
+  user: AuthenticatedUser,
+) {
+  return this.reportAuditService.findMyHistory(
+    user,
+  );
+}
 }

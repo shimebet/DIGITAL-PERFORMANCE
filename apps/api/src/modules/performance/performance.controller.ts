@@ -13,7 +13,24 @@ import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.in
 @Controller('performance')
 export class PerformanceController {
   constructor(private readonly performanceService: PerformanceService) {}
+  // ==========================================================================
+  // STAFF OPTIONS FOR REPORT FILTER
+  // ==========================================================================
 
+  @Get('staff-options')
+  @Permissions('report.read')
+  staffOptions(
+    @Query('branchId')
+    branchId: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
+  ) {
+    return this.performanceService.staffOptions(
+      branchId,
+      user,
+    );
+  }
   // ==========================================================================
   // PERFORMANCE SUMMARY
   // ==========================================================================

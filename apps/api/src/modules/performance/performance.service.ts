@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { PrismaService } from '../../database/prisma/prisma.service.js';
 import { ScopeService } from '../auth/services/scope.service.js';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
@@ -8,36 +12,237 @@ export class PerformanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scopeService: ScopeService,
-  ) {}
-  private getDateRange(query: PerformanceQueryDto) {
-    const endDate = query.endDate ? new Date(query.endDate) : new Date();
-    const startDate = query.startDate
-      ? new Date(query.startDate)
-      : new Date(endDate.getFullYear(), endDate.getMonth(), 1);
-    if (endDate < startDate) {
+  ) { }
+  // ==========================================================================
+  // STAFF OPTIONS FOR REPORTING
+  // ==========================================================================
+
+  async staffOptions(
+    branchId: string,
+    user: AuthenticatedUser,
+  ) {
+    // A branch must be selected before listing staff.
+    if (!branchId) {
       throw new BadRequestException(
-        'endDate must be greater than or equal to startDate',
+        'branchId is required',
       );
     }
-    endDate.setHours(23, 59, 59, 999);
-    return {
-      startDate,
-      endDate,
-    };
+
+    // Check actual branch access, not just parent region/district access.
+    await this.scopeService.assertBranchAccess(
+      user,
+      branchId,
+    );
+
+    const isDigitalStaff =
+      user.roles.includes('DIGITAL_RESKILLED_STAFF');
+
+    const profiles =
+      await this.prisma.staffProfile.findMany({
+        where: {
+          branchId,
+          status: 'ACTIVE',
+
+          // Digital staff can only select themselves.
+          ...(isDigitalStaff
+            ? {
+                userId: user.id,
+              }
+            : {}),
+
+          user: {
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+        },
+
+        select: {
+          userId: true,
+          branchId: true,
+          employeeNumber: true,
+
+          user: {
+            select: {
+              firstName: true,
+              middleName: true,
+              lastName: true,
+            },
+          },
+        },
+
+        orderBy: {
+          user: {
+            firstName: 'asc',
+          },
+        },
+      });
+
+    return profiles.map((profile) => ({
+      staffId: profile.userId,
+      branchId: profile.branchId,
+      employeeNumber: profile.employeeNumber,
+      firstName: profile.user.firstName,
+      middleName: profile.user.middleName,
+      lastName: profile.user.lastName,
+    }));
   }
-  private async validateScope(
+private getDateRange(query: PerformanceQueryDto) {
+  // Ethiopia Standard Time (UTC+03:00) determines today's date.
+  const ETHIOPIA_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+  const now = new Date();
+
+  const todayInEthiopia = new Date(
+    now.getTime() + ETHIOPIA_OFFSET_MS,
+  )
+    .toISOString()
+    .slice(0, 10);
+
+  const endDateString = query.endDate ?? todayInEthiopia;
+
+  const startDateString =
+    query.startDate ?? `${endDateString.slice(0, 7)}-01`;
+
+  const startDay = startDateString.slice(0, 10);
+  const endDay = endDateString.slice(0, 10);
+
+  if (startDay > endDay) {
+    throw new BadRequestException(
+      'endDate must be greater than or equal to startDate',
+    );
+  }
+
+  // Activity and target period fields are MySQL DATE columns.
+  // Compare calendar dates without applying timezone offsets.
+  const startDate = new Date(`${startDay}T00:00:00.000Z`);
+  const endDate = new Date(`${endDay}T00:00:00.000Z`);
+
+  if (
+    Number.isNaN(startDate.getTime()) ||
+    Number.isNaN(endDate.getTime())
+  ) {
+    throw new BadRequestException(
+      'Invalid reporting date range',
+    );
+  }
+
+  return {
+    startDate,
+    endDate,
+  };
+}
+  // Validate saved report filters using the same
+  // authorization rules as performance reporting.
+  async validateReportAccess(
+    query: PerformanceQueryDto,
+    user: AuthenticatedUser,
+  ): Promise<void> {
+    await this.validateScope(user, query);
+  }
+   private async validateScope(
     user: AuthenticatedUser,
     query: PerformanceQueryDto,
   ) {
     if (query.regionId) {
-      await this.scopeService.assertRegionAccess(user, query.regionId);
+      await this.scopeService.assertRegionAccess(
+        user,
+        query.regionId,
+      );
     }
+
     if (query.districtId) {
-      await this.scopeService.assertDistrictAccess(user, query.districtId);
+      await this.scopeService.assertDistrictAccess(
+        user,
+        query.districtId,
+      );
     }
+
     if (query.branchId) {
-      await this.scopeService.assertBranchAccess(user, query.branchId);
+      await this.scopeService.assertBranchAccess(
+        user,
+        query.branchId,
+      );
     }
+
+    // No explicit staff selection: preserve existing
+    // organizational performance behavior.
+    if (!query.staffId) {
+      return;
+    }
+
+    const isDigitalStaff =
+      user.roles.includes('DIGITAL_RESKILLED_STAFF');
+
+    // Digital staff must never select another user,
+    // even if they share the same branch.
+    if (isDigitalStaff && query.staffId !== user.id) {
+      throw new ForbiddenException(
+        'You can only access your own staff performance',
+      );
+    }
+
+    const staff =
+      await this.prisma.staffProfile.findUnique({
+        where: {
+          userId: query.staffId,
+        },
+        select: {
+          branchId: true,
+        },
+      });
+
+    if (!staff) {
+      throw new ForbiddenException(
+        'Staff performance access is not permitted',
+      );
+    }
+
+    // Explicit organization filters must match
+    // the selected staff member's actual branch.
+    if (
+      query.branchId &&
+      query.branchId !== staff.branchId
+    ) {
+      throw new ForbiddenException(
+        'Selected staff does not belong to the requested branch',
+      );
+    }
+
+    if (query.districtId || query.regionId) {
+      const branch =
+        await this.prisma.branch.findUnique({
+          where: {
+            id: staff.branchId,
+          },
+          select: {
+            districtId: true,
+            district: {
+              select: {
+                regionId: true,
+              },
+            },
+          },
+        });
+
+      if (
+        !branch ||
+        (query.districtId &&
+          query.districtId !== branch.districtId) ||
+        (query.regionId &&
+          query.regionId !== branch.district.regionId)
+      ) {
+        throw new ForbiddenException(
+          'Selected staff is outside the requested organization',
+        );
+      }
+    }
+
+    // Enforce the selected staff member's actual
+    // branch access, regardless of supplied filters.
+    await this.scopeService.assertBranchAccess(
+      user,
+      staff.branchId,
+    );
   }
   async productComparison(query: PerformanceQueryDto, user: AuthenticatedUser) {
     await this.validateScope(user, query);
@@ -58,8 +263,8 @@ export class PerformanceService {
          */
         ...(query.productId
           ? {
-              productId: query.productId,
-            }
+            productId: query.productId,
+          }
           : {}),
         activity: {
           activityDate: {
@@ -71,38 +276,38 @@ export class PerformanceService {
            */
           ...(query.branchId
             ? {
-                branchId: query.branchId,
-              }
+              branchId: query.branchId,
+            }
             : {}),
           /*
            * Explicit staff filter.
            */
           ...(query.staffId
             ? {
-                staffId: query.staffId,
-              }
+              staffId: query.staffId,
+            }
             : {}),
           /*
            * Explicit district filter.
            */
           ...(query.districtId
             ? {
-                branch: {
-                  districtId: query.districtId,
-                },
-              }
+              branch: {
+                districtId: query.districtId,
+              },
+            }
             : {}),
           /*
            * Explicit region filter.
            */
           ...(query.regionId
             ? {
-                branch: {
-                  district: {
-                    regionId: query.regionId,
-                  },
+              branch: {
+                district: {
+                  regionId: query.regionId,
                 },
-              }
+              },
+            }
             : {}),
           /*
            * Security scope.
@@ -156,8 +361,8 @@ export class PerformanceService {
         conversionRate:
           row.customersEngaged > 0
             ? Number(
-                ((row.activations / row.customersEngaged) * 100).toFixed(2),
-              )
+              ((row.activations / row.customersEngaged) * 100).toFixed(2),
+            )
             : 0,
         transactionRate:
           row.activations > 0
@@ -166,91 +371,183 @@ export class PerformanceService {
       }))
       .sort((a, b) => b.activations - a.activations);
   }
-  async dailyTrend(query: PerformanceQueryDto, user: AuthenticatedUser) {
-    await this.validateScope(user, query);
-    const { startDate, endDate } = this.getDateRange(query);
-    const scopeFilter = this.buildScopeFilter(user);
-    const activities = await this.prisma.activity.findMany({
-      where: {
-        activityDate: {
-          gte: startDate,
-          lte: endDate,
-        },
-        ...(query.branchId
-          ? {
-              branchId: query.branchId,
-            }
-          : {}),
-        ...(query.staffId
-          ? {
-              staffId: query.staffId,
-            }
-          : {}),
-        ...(query.districtId
-          ? {
-              branch: {
-                districtId: query.districtId,
-              },
-            }
-          : {}),
-        ...(query.regionId
-          ? {
-              branch: {
-                district: {
-                  regionId: query.regionId,
-                },
-              },
-            }
-          : {}),
-        ...scopeFilter,
+  
+async dailyTrend(query: PerformanceQueryDto, user: AuthenticatedUser) {
+  await this.validateScope(user, query);
+
+  const { startDate, endDate } = this.getDateRange(query);
+  const scopeFilter = this.buildScopeFilter(user);
+
+  // ================================================================
+  // FETCH ACTIVITIES
+  // ================================================================
+
+  const activities = await this.prisma.activity.findMany({
+    where: {
+      activityDate: {
+        gte: startDate,
+        lte: endDate,
       },
-      orderBy: {
-        activityDate: 'asc',
+
+      ...(query.branchId
+        ? {
+            branchId: query.branchId,
+          }
+        : {}),
+
+      ...(query.staffId
+        ? {
+            staffId: query.staffId,
+          }
+        : {}),
+
+      ...(query.districtId
+        ? {
+            branch: {
+              districtId: query.districtId,
+            },
+          }
+        : {}),
+
+      ...(query.regionId
+        ? {
+            branch: {
+              district: {
+                regionId: query.regionId,
+              },
+            },
+          }
+        : {}),
+
+      // Always enforce authenticated-user scope.
+      ...scopeFilter,
+    },
+
+    // Load product records when filtering by product.
+    // The relation is included consistently to keep Prisma's
+    // generated TypeScript result type straightforward.
+    include: {
+      products: {
+        where: query.productId
+          ? {
+              productId: query.productId,
+            }
+          : undefined,
       },
-    });
-    const map = new Map<
-      string,
-      {
-        date: string;
-        customerVisits: number;
-        customersContacted: number;
-        customersEducated: number;
-        activations: number;
-        reactivations: number;
-        transactions: number;
+    },
+
+    orderBy: {
+      activityDate: 'asc',
+    },
+  });
+
+  // ================================================================
+  // DAILY AGGREGATION STRUCTURE
+  // ================================================================
+
+  const map = new Map<
+    string,
+    {
+      date: string;
+      customerVisits: number;
+      customersContacted: number;
+      customersEducated: number;
+      productCustomersEngaged: number;
+      activations: number;
+      reactivations: number;
+      transactions: number;
+    }
+  >();
+
+  // ================================================================
+  // AGGREGATE ACTIVITIES BY DATE
+  // ================================================================
+
+  for (const activity of activities) {
+    // Group activities by Ethiopia-local calendar date (UTC+03:00).
+// activityDate is a MySQL DATE field.
+// Preserve its stored calendar date.
+const date = activity.activityDate.toISOString().slice(0, 10);
+
+    const row = map.get(date) ?? {
+      date,
+      customerVisits: 0,
+      customersContacted: 0,
+      customersEducated: 0,
+      productCustomersEngaged: 0,
+      activations: 0,
+      reactivations: 0,
+      transactions: 0,
+    };
+
+    // General activity metrics remain unfiltered by product.
+    row.customerVisits += activity.customerVisits;
+    row.customersContacted += activity.customersContacted;
+    row.customersEducated += activity.customersEducated;
+
+    if (query.productId) {
+      // Product-specific performance:
+      // Only count the selected product's records.
+
+      const productRecord = activity.products.find(
+        (item) => item.productId === query.productId,
+      );
+
+      if (productRecord) {
+        row.productCustomersEngaged += productRecord.customersEngaged;
+        row.activations += productRecord.activations;
+        row.reactivations += productRecord.reactivations;
+        row.transactions += productRecord.transactions;
       }
-    >();
-    for (const activity of activities) {
-      const date = activity.activityDate.toISOString().slice(0, 10);
-      const row = map.get(date) ?? {
-        date,
-        customerVisits: 0,
-        customersContacted: 0,
-        customersEducated: 0,
-        activations: 0,
-        reactivations: 0,
-        transactions: 0,
-      };
-      row.customerVisits += activity.customerVisits;
-      row.customersContacted += activity.customersContacted;
-      row.customersEducated += activity.customersEducated;
+    } else {
+      // General performance:
+      // Use the activity-level totals across all products.
+
       row.activations += activity.activations;
       row.reactivations += activity.reactivations;
       row.transactions += activity.transactions;
-      map.set(date, row);
     }
-    return Array.from(map.values()).map((row) => ({
-      ...row,
-      conversionRate:
-        row.customersEducated > 0
-          ? Number(((row.activations / row.customersEducated) * 100).toFixed(2))
-          : 0,
-      transactionRate:
-        row.activations > 0
-          ? Number(((row.transactions / row.activations) * 100).toFixed(2))
-          : 0,
-    }));
+
+    map.set(date, row);
   }
+
+  // ================================================================
+  // CALCULATE DAILY CONVERSION RATES
+  // ================================================================
+
+  return Array.from(map.values()).map((row) => {
+    const conversionDenominator = query.productId
+      ? row.productCustomersEngaged
+      : row.customersEducated;
+
+    const conversionRate =
+      conversionDenominator > 0
+        ? Number(
+            (
+              (row.activations / conversionDenominator) *
+              100
+            ).toFixed(2),
+          )
+        : 0;
+
+    const transactionRate =
+      row.activations > 0
+        ? Number(
+            (
+              (row.transactions / row.activations) *
+              100
+            ).toFixed(2),
+          )
+        : 0;
+
+    return {
+      ...row,
+      conversionRate,
+      transactionRate,
+    };
+  });
+}
+
   private buildScopeFilter(user: AuthenticatedUser) {
     // ==========================================================================
     // DIGITAL STAFF
@@ -285,36 +582,36 @@ export class PerformanceService {
         },
         ...(branchIds.length
           ? [
-              {
-                branchId: {
-                  in: branchIds,
-                },
+            {
+              branchId: {
+                in: branchIds,
               },
-            ]
+            },
+          ]
           : []),
         ...(districtIds.length
           ? [
-              {
-                branch: {
-                  districtId: {
-                    in: districtIds,
-                  },
+            {
+              branch: {
+                districtId: {
+                  in: districtIds,
                 },
               },
-            ]
+            },
+          ]
           : []),
         ...(regionIds.length
           ? [
-              {
-                branch: {
-                  district: {
-                    regionId: {
-                      in: regionIds,
-                    },
+            {
+              branch: {
+                district: {
+                  regionId: {
+                    in: regionIds,
                   },
                 },
               },
-            ]
+            },
+          ]
           : []),
       ],
     };
@@ -331,40 +628,40 @@ export class PerformanceService {
         },
         ...(query.branchId
           ? {
-              branchId: query.branchId,
-            }
+            branchId: query.branchId,
+          }
           : {}),
         ...(query.staffId
           ? {
-              staffId: query.staffId,
-            }
+            staffId: query.staffId,
+          }
           : {}),
         ...(query.districtId
           ? {
-              branch: {
-                districtId: query.districtId,
-              },
-            }
+            branch: {
+              districtId: query.districtId,
+            },
+          }
           : {}),
         ...(query.regionId
           ? {
-              branch: {
-                district: {
-                  regionId: query.regionId,
-                },
+            branch: {
+              district: {
+                regionId: query.regionId,
               },
-            }
+            },
+          }
           : {}),
         ...scopeFilter,
-        ...(query.productId
-          ? {
-              products: {
-                some: {
-                  productId: query.productId,
-                },
-              },
-            }
-          : {}),
+        // ...(query.productId
+        //   ? {
+        //     products: {
+        //       some: {
+        //         productId: query.productId,
+        //       },
+        //     },
+        //   }
+        //   : {}),
       },
       include: {
         branch: {
@@ -396,21 +693,22 @@ export class PerformanceService {
       phoneCalls += activity.phoneCalls;
       customersContacted += activity.customersContacted;
       customersEducated += activity.customersEducated;
-      if (query.productId) {
-        const productRecord = activity.products.find(
-          (item) => item.productId === query.productId,
-        );
-        if (productRecord) {
-          productCustomersEngaged += productRecord.customersEngaged;
-          activations += productRecord.activations;
-          reactivations += productRecord.reactivations;
-          transactions += productRecord.transactions;
-        }
-      } else {
-        activations += activity.activations;
-        reactivations += activity.reactivations;
-        transactions += activity.transactions;
-      }
+if (query.productId) {
+  const productRecord = activity.products.find(
+    (item) => item.productId === query.productId,
+  );
+
+  if (productRecord) {
+    productCustomersEngaged += productRecord.customersEngaged;
+    activations += productRecord.activations;
+    reactivations += productRecord.reactivations;
+    transactions += productRecord.transactions;
+  }
+} else {
+  activations += activity.activations;
+  reactivations += activity.reactivations;
+  transactions += activity.transactions;
+}
     }
     /*
      * General dashboard:
@@ -500,13 +798,13 @@ export class PerformanceService {
       user.roles.includes('DIGITAL_RESKILLED_STAFF');
     const staffProfile = isDigitalStaff
       ? await this.prisma.staffProfile.findUnique({
-          where: {
-            userId: user.id,
-          },
-          select: {
-            branchId: true,
-          },
-        })
+        where: {
+          userId: user.id,
+        },
+        select: {
+          branchId: true,
+        },
+      })
       : null;
     const branches =
       await this.prisma.branch.findMany({
@@ -514,31 +812,31 @@ export class PerformanceService {
           status: 'ACTIVE',
           ...(query.branchId
             ? {
-                id: query.branchId,
-              }
+              id: query.branchId,
+            }
             : {}),
           ...(query.districtId
             ? {
-                districtId: query.districtId,
-              }
+              districtId: query.districtId,
+            }
             : {}),
           ...(query.regionId
             ? {
-                district: {
-                  regionId: query.regionId,
-                },
-              }
+              district: {
+                regionId: query.regionId,
+              },
+            }
             : {}),
           ...(isDigitalStaff
             ? {
-                id: staffProfile?.branchId ?? '__NO_BRANCH__',
-              }
+              id: staffProfile?.branchId ?? '__NO_BRANCH__',
+            }
             : !isGlobalUser
               ? {
-                  id: {
-                    in: accessibleBranchIds ?? [],
-                  },
-                }
+                id: {
+                  in: accessibleBranchIds ?? [],
+                },
+              }
               : {}),
         },
         include: {
@@ -565,11 +863,11 @@ export class PerformanceService {
            */
           ...(isDigitalStaff
             ? {
-                staffId: user.id,
-              }
+              staffId: user.id,
+            }
             : {
-                staffId: undefined,
-              }),
+              staffId: undefined,
+            }),
         };
         const summary =
           await this.summary(
@@ -583,22 +881,22 @@ export class PerformanceService {
         const activations =
           Number(
             summary.activation.activations ??
-              0,
+            0,
           );
         const transactions =
           Number(
             summary.transaction.transactions ??
-              0,
+            0,
           );
         const conversionRate =
           Number(
             summary.conversion.rate ??
-              0,
+            0,
           );
         const achievementRate =
           Number(
             summary.achievement.percentage ??
-              0,
+            0,
           );
         return {
           branchId: branch.id,
@@ -616,12 +914,12 @@ export class PerformanceService {
           customerVisits:
             Number(
               summary.activity.customerVisits ??
-                0,
+              0,
             ),
           customersEducated:
             Number(
               summary.activity.customersEducated ??
-                0,
+              0,
             ),
           activations,
           transactions,
@@ -629,7 +927,7 @@ export class PerformanceService {
           transactionConversionRate:
             Number(
               summary.transaction.conversionRate ??
-                0,
+              0,
             ),
           achievementRate,
           remainingTarget:
@@ -640,35 +938,35 @@ export class PerformanceService {
           activityCount:
             Number(
               summary.activityCount ??
-                0,
+              0,
             ),
-status:
-  this.getPerformanceStatus(
-    achievementRate,
-    target,
-  ),
+          status:
+            this.getPerformanceStatus(
+              achievementRate,
+              target,
+            ),
         };
       }),
     );
-rows.sort(
-  (a, b) => {
-    const aHasTarget =
-      a.target > 0 ? 1 : 0;
-    const bHasTarget =
-      b.target > 0 ? 1 : 0;
-    return (
-      bHasTarget -
-        aHasTarget ||
-      b.achievementRate -
-        a.achievementRate ||
-      b.activations -
-        a.activations ||
-      a.branchName.localeCompare(
-        b.branchName,
-      )
+    rows.sort(
+      (a, b) => {
+        const aHasTarget =
+          a.target > 0 ? 1 : 0;
+        const bHasTarget =
+          b.target > 0 ? 1 : 0;
+        return (
+          bHasTarget -
+          aHasTarget ||
+          b.achievementRate -
+          a.achievementRate ||
+          b.activations -
+          a.activations ||
+          a.branchName.localeCompare(
+            b.branchName,
+          )
+        );
+      },
     );
-  },
-);
     return rows.map(
       (row, index) => ({
         rank: index + 1,
@@ -705,45 +1003,45 @@ rows.sort(
           status: 'ACTIVE',
           ...(isDigitalStaff
             ? {
-                userId: user.id,
-              }
+              userId: user.id,
+            }
             : query.staffId
               ? {
-                  userId: query.staffId,
-                }
+                userId: query.staffId,
+              }
               : {}),
           ...(query.branchId
             ? {
-                branchId: query.branchId,
-              }
+              branchId: query.branchId,
+            }
             : {}),
           ...(query.districtId
             ? {
-                branch: {
-                  districtId:
-                    query.districtId,
-                },
-              }
+              branch: {
+                districtId:
+                  query.districtId,
+              },
+            }
             : {}),
           ...(query.regionId
             ? {
-                branch: {
-                  district: {
-                    regionId:
-                      query.regionId,
-                  },
+              branch: {
+                district: {
+                  regionId:
+                    query.regionId,
                 },
-              }
+              },
+            }
             : {}),
           ...(!isGlobalUser &&
-          !isDigitalStaff
+            !isDigitalStaff
             ? {
-                branchId: {
-                  in:
-                    accessibleBranchIds ??
-                    [],
-                },
-              }
+              branchId: {
+                in:
+                  accessibleBranchIds ??
+                  [],
+              },
+            }
             : {}),
         },
         include: {
@@ -763,19 +1061,19 @@ rows.sort(
       staffProfiles.map(
         async (staffProfile) => {
           const rowQuery: PerformanceQueryDto =
-            {
-              ...query,
-              regionId:
-                staffProfile.branch
-                  .district.regionId,
-              districtId:
-                staffProfile.branch
-                  .districtId,
-              branchId:
-                staffProfile.branchId,
-              staffId:
-                staffProfile.userId,
-            };
+          {
+            ...query,
+            regionId:
+              staffProfile.branch
+                .district.regionId,
+            districtId:
+              staffProfile.branch
+                .districtId,
+            branchId:
+              staffProfile.branchId,
+            staffId:
+              staffProfile.userId,
+          };
           const summary =
             await this.summary(
               rowQuery,
@@ -813,7 +1111,7 @@ rows.sort(
           const conversionRate =
             Number(
               summary.conversion.rate ??
-                0,
+              0,
             );
           const achievementRate =
             Number(
@@ -868,19 +1166,19 @@ rows.sort(
             remainingTarget:
               Math.max(
                 target -
-                  activations,
+                activations,
                 0,
               ),
             activityCount:
               Number(
                 summary.activityCount ??
-                  0,
+                0,
               ),
-status:
-  this.getPerformanceStatus(
-    achievementRate,
-    target,
-  ),
+            status:
+              this.getPerformanceStatus(
+                achievementRate,
+                target,
+              ),
           };
         },
       ),
@@ -888,9 +1186,9 @@ status:
     rows.sort(
       (a, b) =>
         b.achievementRate -
-          a.achievementRate ||
+        a.achievementRate ||
         b.activations -
-          a.activations ||
+        a.activations ||
         a.firstName.localeCompare(
           b.firstName,
         ),
@@ -906,23 +1204,23 @@ status:
   // PERFORMANCE STATUS
   // ==========================================================================
   private getPerformanceStatus(
-  achievementRate: number,
-  target = 0,
-) {
-  if (target <= 0) {
-    return 'NO_TARGET';
+    achievementRate: number,
+    target = 0,
+  ) {
+    if (target <= 0) {
+      return 'NO_TARGET';
+    }
+    if (achievementRate >= 100) {
+      return 'ACHIEVED';
+    }
+    if (achievementRate >= 80) {
+      return 'ON_TRACK';
+    }
+    if (achievementRate >= 50) {
+      return 'NEEDS_ATTENTION';
+    }
+    return 'CRITICAL';
   }
-  if (achievementRate >= 100) {
-    return 'ACHIEVED';
-  }
-  if (achievementRate >= 80) {
-    return 'ON_TRACK';
-  }
-  if (achievementRate >= 50) {
-    return 'NEEDS_ATTENTION';
-  }
-  return 'CRITICAL';
-}
   // ==========================================================================
   // TARGET SECURITY HELPERS
   // ==========================================================================

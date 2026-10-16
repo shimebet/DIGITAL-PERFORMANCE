@@ -17,6 +17,17 @@ import {
 import {
   ReportsService,
 } from './reports.service.js';
+import {
+  SavedReportsService,
+} from './saved-reports.service.js';
+
+import {
+  ReportAuditService,
+} from './report-audit.service.js';
+import {
+  SavedReportsController,
+} from './saved-reports.controller.js';
+
 
 @Module({
   imports: [
@@ -24,13 +35,16 @@ import {
     PerformanceModule,
   ],
 
-  controllers: [
-    ReportsController,
-  ],
+controllers: [
+  ReportsController,
+  SavedReportsController,
+],
 
-  providers: [
-    ReportsService,
-  ],
+providers: [
+  ReportsService,
+  SavedReportsService,
+  ReportAuditService,
+],
 
   exports: [
     ReportsService,

@@ -1,25 +1,110 @@
-import { ValidationPipe } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import {
+  Logger,
+  ValidationPipe,
+} from '@nestjs/common';
+
+import {
+  NestFactory,
+} from '@nestjs/core';
+
+import {
+  DocumentBuilder,
+  SwaggerModule,
+} from '@nestjs/swagger';
 
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 
-import { AppModule } from './app.module.js';
+import {
+  AppModule,
+} from './app.module.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const logger = new Logger('Bootstrap');
+
+  const isProduction =
+    process.env.NODE_ENV === 'production';
+
+  const port = Number(
+    process.env.PORT ?? 3000,
+  );
+
+  const host =
+    process.env.HOST ??
+    '127.0.0.1';
+
+  if (
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65535
+  ) {
+    throw new Error(
+      'PORT must be an integer between 1 and 65535',
+    );
+  }
+
+  const app = await NestFactory.create(
+    AppModule,
+  );
+
+  // ============================================================
+  // SECURITY HEADERS
+  // ============================================================
 
   app.use(helmet());
 
   app.use(cookieParser());
 
+  // ============================================================
+  // CORS
+  // ============================================================
+
+  const configuredOrigins =
+    process.env.CORS_ORIGINS ??
+    'http://localhost:5173';
+
+  const allowedOrigins =
+    configuredOrigins
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+
+  if (
+    isProduction &&
+    allowedOrigins.some(
+      (origin) =>
+        origin === '*' ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1'),
+    )
+  ) {
+    throw new Error(
+      'Production CORS_ORIGINS must contain approved application origins, not localhost or wildcard origins.',
+    );
+  }
+
   app.enableCors({
-    origin: 'http://localhost:5173',
+    origin: allowedOrigins,
     credentials: true,
+    methods: [
+      'GET',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+      'OPTIONS',
+    ],
   });
 
+  // ============================================================
+  // API PREFIX
+  // ============================================================
+
   app.setGlobalPrefix('api');
+
+  // ============================================================
+  // GLOBAL VALIDATION
+  // ============================================================
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -29,37 +114,73 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Digital Performance Monitoring API')
-    .setDescription(
-      'API for Digital Performance Monitoring Platform',
-    )
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+  // ============================================================
+  // SWAGGER DOCUMENTATION
+  // Disabled by default in production.
+  // ============================================================
 
-  const document = SwaggerModule.createDocument(
-    app,
-    swaggerConfig,
+  const enableSwagger =
+    process.env.ENABLE_SWAGGER === 'true' ||
+    (
+      !isProduction &&
+      process.env.ENABLE_SWAGGER !== 'false'
+    );
+
+  if (enableSwagger) {
+    const swaggerConfig =
+      new DocumentBuilder()
+        .setTitle(
+          'Digital Performance Monitoring API',
+        )
+        .setDescription(
+          'API for Digital Performance Monitoring Platform',
+        )
+        .setVersion('1.0')
+        .addBearerAuth()
+        .build();
+
+    const document =
+      SwaggerModule.createDocument(
+        app,
+        swaggerConfig,
+      );
+
+    SwaggerModule.setup(
+      'api/docs',
+      app,
+      document,
+    );
+  }
+
+  // ============================================================
+  // START SERVER
+  // ============================================================
+
+  await app.listen(
+    port,
+    host,
   );
 
-  SwaggerModule.setup(
-    'api/docs',
-    app,
-    document,
+  logger.log(
+    `Digital Performance API listening on ${host}:${port}/api`,
   );
 
-  const port = process.env.PORT ?? 3000;
-
-  await app.listen(port);
-
-  console.log(
-    `Digital Performance API running on http://localhost:${port}/api`,
-  );
-
-  console.log(
-    `Swagger running on http://localhost:${port}/api/docs`,
-  );
+  if (enableSwagger) {
+    logger.log(
+      `Swagger enabled at /api/docs`,
+    );
+  }
 }
 
-bootstrap();
+void bootstrap().catch((error: unknown) => {
+  const logger = new Logger('Bootstrap');
+
+  logger.error(
+    'Application startup failed',
+    error instanceof Error
+      ? error.stack
+      : String(error),
+  );
+
+  process.exitCode = 1;
+});

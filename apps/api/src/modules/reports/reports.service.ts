@@ -16,49 +16,61 @@ import {
   ReportQueryDto,
 } from './dto/report-query.dto.js';
 
+import {
+  ReportAuditService,
+} from './report-audit.service.js';
+
+
+
+
 @Injectable()
 export class ReportsService {
   constructor(
-    private readonly performanceService:
-      PerformanceService,
-  ) {}
+    private readonly performanceService: PerformanceService,
+    private readonly reportAuditService: ReportAuditService,
+  ) { }
 
   async getPerformanceReport(
-    query: ReportQueryDto,
-    user: AuthenticatedUser,
-  ) {
-    const summary =
-      await this.performanceService.summary(
-        query,
-        user,
-      );
+  query: ReportQueryDto,
+  user: AuthenticatedUser,
+  recordAudit = true,
+) {
+  const summary =
+    await this.performanceService.summary(
+      query,
+      user,
+    );
 
-    const trend =
-      await this.performanceService.dailyTrend(
-        query,
-        user,
-      );
+  const trend =
+    await this.performanceService.dailyTrend(
+      query,
+      user,
+    );
 
-    const products =
-      await this.performanceService.productComparison(
-        query,
-        user,
-      );
+  const products =
+    await this.performanceService.productComparison(
+      query,
+      user,
+    );
 
-    return {
-      generatedAt:
-        new Date(),
+  const report = {
+    generatedAt: new Date(),
+    filters: query,
+    summary,
+    trend,
+    products,
+  };
 
-      filters:
-        query,
-
-      summary,
-
-      trend,
-
-      products,
-    };
+  if (recordAudit) {
+    await this.reportAuditService.recordReport(
+      user,
+      query,
+      'JSON',
+    );
   }
+
+  return report;
+}
 
   async exportCsv(
     query: ReportQueryDto,
@@ -68,6 +80,7 @@ export class ReportsService {
       await this.getPerformanceReport(
         query,
         user,
+        false,
       );
 
     const rows = [
@@ -117,7 +130,7 @@ export class ReportsService {
       ]);
     }
 
-    return rows
+    const csv = rows
       .map(
         (row) =>
           row
@@ -133,6 +146,13 @@ export class ReportsService {
             .join(','),
       )
       .join('\n');
+    await this.reportAuditService.recordReport(
+      user,
+      query,
+      'CSV',
+    );
+
+    return csv;
   }
 
   async exportExcel(
@@ -143,8 +163,10 @@ export class ReportsService {
       await this.getPerformanceReport(
         query,
         user,
+        false,
       );
-
+    const hasAssignedTarget =
+      Number(report.summary.achievement.target) > 0;
     const workbook =
       new ExcelJS.Workbook();
 
@@ -184,10 +206,10 @@ export class ReportsService {
 
     summarySheet.addRows([
       {
-        metric:
-          'Target',
-        value:
-          report.summary.achievement.target,
+        metric: 'Target',
+        value: hasAssignedTarget
+          ? report.summary.achievement.target
+          : 'Not assigned',
       },
       {
         metric:
@@ -214,10 +236,10 @@ export class ReportsService {
           report.summary.conversion.rate,
       },
       {
-        metric:
-          'Achievement %',
-        value:
-          report.summary.achievement.percentage,
+        metric: 'Achievement %',
+        value: hasAssignedTarget
+          ? report.summary.achievement.percentage
+          : 'N/A',
       },
       {
         metric:
@@ -447,8 +469,14 @@ export class ReportsService {
     const buffer =
       await workbook.xlsx.writeBuffer();
 
-    return Buffer.from(
-      buffer,
-    );
+const file = Buffer.from(buffer);
+
+await this.reportAuditService.recordReport(
+  user,
+  query,
+  'XLSX',
+);
+
+return file;
   }
 }
