@@ -276,6 +276,28 @@ const query = {
   const overview = overviewQuery.data;
 
   // ==========================================================================
+// TARGET DISPLAY POLICY
+//
+// A positive target means an applicable target assignment exists.
+//
+// A zero target is currently treated as "not assigned" because the API
+// does not yet distinguish an unassigned target from an explicit zero target.
+//
+// Monthly targets are never prorated for partial-month reporting.
+// ==========================================================================
+
+const hasAssignedTarget =
+  overview !== undefined &&
+  Number(overview.performance.achievement.target) > 0;
+
+const targetDisplayValue = hasAssignedTarget
+  ? overview.performance.achievement.target
+  : "Not assigned";
+
+const achievementDisplayValue = hasAssignedTarget
+  ? `${overview.performance.achievement.percentage.toFixed(1)}%`
+  : "N/A";
+  // ==========================================================================
   // RENDER
   // ==========================================================================
 
@@ -379,31 +401,35 @@ const query = {
             sx={{
               display: "grid",
 
-              gridTemplateColumns: {
-                xs: "1fr",
+gridTemplateColumns: {
+  xs: "1fr",
 
-                sm: "repeat(2, minmax(0, 1fr))",
+  sm: "repeat(2, minmax(0, 1fr))",
 
-                md: "repeat(3, minmax(0, 1fr))",
+  md: "repeat(3, minmax(0, 1fr))",
 
-                lg: "repeat(4, minmax(0, 1fr))",
+  lg: "repeat(4, minmax(0, 1fr))",
 
-                xl: "repeat(7, minmax(0, 1fr))",
-              },
+  xl: "repeat(4, minmax(0, 1fr))",
+},
 
               gap: 2,
 
               mb: 3,
             }}
           >
-            <KpiCard
-              title="Target"
-              value={overview.performance.achievement.target}
-              subtitle={
-                productId ? "Selected product target" : "Activation target"
-              }
-              icon={<TrackChangesOutlined />}
-            />
+ <KpiCard
+  title="Target"
+  value={targetDisplayValue}
+  subtitle={
+    !hasAssignedTarget
+      ? "No applicable target assigned"
+      : productId
+        ? "Selected product target"
+        : "Full-period activation target"
+  }
+  icon={<TrackChangesOutlined />}
+/>
 
             <KpiCard
               title="Customer Visits"
@@ -444,14 +470,16 @@ const query = {
               icon={<GroupsOutlined />}
             />
 
-            <KpiCard
-              title="Achievement"
-              value={`${overview.performance.achievement.percentage.toFixed(
-                1,
-              )}%`}
-              subtitle="Activations / target"
-              icon={<InsightsOutlined />}
-            />
+<KpiCard
+  title="Achievement"
+  value={achievementDisplayValue}
+  subtitle={
+    hasAssignedTarget
+      ? "Activations / full target"
+      : "Target not assigned"
+  }
+  icon={<InsightsOutlined />}
+/>
           </Box>
 
           {/* ===============================================================

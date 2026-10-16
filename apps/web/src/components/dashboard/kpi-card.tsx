@@ -77,20 +77,29 @@ export function KpiCard({ title, value, subtitle, icon }: KpiCardProps) {
               {title}
             </Typography>
 
-            <Typography
-              variant="h4"
-              sx={{
-                mt: 0.75,
+<Typography
+  variant="h4"
+  sx={{
+    mt: 0.75,
 
-                fontWeight: 700,
+    fontWeight: 700,
 
-                lineHeight: 1.15,
+    lineHeight: 1.15,
 
-                overflowWrap: "anywhere",
-              }}
-            >
-              {value}
-            </Typography>
+    fontSize:
+      typeof value === "string" && value.length > 8
+        ? "1.25rem"
+        : undefined,
+
+    overflowWrap: "normal",
+
+    wordBreak: "normal",
+
+    whiteSpace: "normal",
+  }}
+>
+  {value}
+</Typography>
 
             {subtitle && (
               <Typography

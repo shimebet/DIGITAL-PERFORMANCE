@@ -1,6 +1,24 @@
+
 import {
   create,
 } from 'zustand';
+
+// ============================================================================
+// REPORT FILTER VALUES
+// ============================================================================
+
+export interface ReportFilterValues {
+  regionId?: string;
+  districtId?: string;
+  branchId?: string;
+  productId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+// ============================================================================
+// FILTER STATE
+// ============================================================================
 
 interface FilterState {
   regionId: string;
@@ -35,12 +53,20 @@ interface FilterState {
     endDate: string,
   ) => void;
 
+  // Restore all saved report filters together.
+  applyReportFilters: (
+    filters: ReportFilterValues,
+  ) => void;
+
   resetFilters: () => void;
 }
 
+// ============================================================================
+// DATE HELPERS
+// ============================================================================
+
 function currentMonthStart() {
-  const date =
-    new Date();
+  const date = new Date();
 
   return new Date(
     date.getFullYear(),
@@ -48,35 +74,33 @@ function currentMonthStart() {
     1,
   )
     .toISOString()
-    .slice(
-      0,
-      10,
-    );
+    .slice(0, 10);
 }
 
 function today() {
   return new Date()
     .toISOString()
-    .slice(
-      0,
-      10,
-    );
+    .slice(0, 10);
 }
+
+// ============================================================================
+// ZUSTAND FILTER STORE
+// ============================================================================
 
 export const useFilterStore =
   create<FilterState>(
     (set) => ({
-      regionId:
-        '',
+      // ----------------------------------------------------------------------
+      // INITIAL STATE
+      // ----------------------------------------------------------------------
 
-      districtId:
-        '',
+      regionId: '',
 
-      branchId:
-        '',
+      districtId: '',
 
-      productId:
-        '',
+      branchId: '',
+
+      productId: '',
 
       startDate:
         currentMonthStart(),
@@ -84,66 +108,113 @@ export const useFilterStore =
       endDate:
         today(),
 
-      setRegionId: (
-        regionId,
-      ) =>
+      // ----------------------------------------------------------------------
+      // REGION
+      // ----------------------------------------------------------------------
+
+      setRegionId: (regionId) =>
         set({
           regionId,
-          districtId:
-            '',
-          branchId:
-            '',
+          districtId: '',
+          branchId: '',
         }),
 
-      setDistrictId: (
-        districtId,
-      ) =>
+      // ----------------------------------------------------------------------
+      // DISTRICT
+      // ----------------------------------------------------------------------
+
+      setDistrictId: (districtId) =>
         set({
           districtId,
-          branchId:
-            '',
+          branchId: '',
         }),
 
-      setBranchId: (
-        branchId,
-      ) =>
+      // ----------------------------------------------------------------------
+      // BRANCH
+      // ----------------------------------------------------------------------
+
+      setBranchId: (branchId) =>
         set({
           branchId,
         }),
 
-      setProductId: (
-        productId,
-      ) =>
+      // ----------------------------------------------------------------------
+      // PRODUCT
+      // ----------------------------------------------------------------------
+
+      setProductId: (productId) =>
         set({
           productId,
         }),
 
-      setStartDate: (
-        startDate,
-      ) =>
+      // ----------------------------------------------------------------------
+      // START DATE
+      // ----------------------------------------------------------------------
+
+      setStartDate: (startDate) =>
         set({
           startDate,
         }),
 
-      setEndDate: (
-        endDate,
-      ) =>
+      // ----------------------------------------------------------------------
+      // END DATE
+      // ----------------------------------------------------------------------
+
+      setEndDate: (endDate) =>
         set({
           endDate,
         }),
 
-      resetFilters: () =>
+      // ----------------------------------------------------------------------
+      // APPLY SAVED REPORT FILTERS
+      // ----------------------------------------------------------------------
+      // Restore all organization, product, and date filters
+      // in one state update.
+      //
+      // This avoids the individual region/district setters
+      // clearing dependent selections during restoration.
+      //
+      // Staff selection remains local to ReportsPage.
+      // ----------------------------------------------------------------------
+
+      applyReportFilters: (filters) =>
         set({
           regionId:
-            '',
+            filters.regionId ?? '',
+
           districtId:
-            '',
+            filters.districtId ?? '',
+
           branchId:
-            '',
+            filters.branchId ?? '',
+
           productId:
-            '',
+            filters.productId ?? '',
+
+          startDate:
+            filters.startDate ?? '',
+
+          endDate:
+            filters.endDate ?? '',
+        }),
+
+      // ----------------------------------------------------------------------
+      // RESET FILTERS
+      // ----------------------------------------------------------------------
+
+      resetFilters: () =>
+        set({
+          regionId: '',
+
+          districtId: '',
+
+          branchId: '',
+
+          productId: '',
+
           startDate:
             currentMonthStart(),
+
           endDate:
             today(),
         }),

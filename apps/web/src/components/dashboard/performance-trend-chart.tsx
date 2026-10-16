@@ -4,7 +4,9 @@ import {
   Typography,
 } from '@mui/material';
 
-import ReactECharts from 'echarts-for-react';
+import {
+  OptimizedECharts,
+} from './optimized-echarts';
 
 import type {
   DailyTrendRow,
@@ -290,20 +292,7 @@ export function PerformanceTrendChart({
             period.
           </Typography>
         ) : (
-          <ReactECharts
-            option={
-              option
-            }
-            notMerge
-            lazyUpdate
-            style={{
-              width:
-                '100%',
-
-              height:
-                '380px',
-            }}
-          />
+<OptimizedECharts option={option} />
         )}
       </CardContent>
     </Card>

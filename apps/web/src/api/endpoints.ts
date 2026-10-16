@@ -90,6 +90,9 @@ export const API_ENDPOINTS = {
 
     staffRanking:
       '/performance/rankings/staff',
+
+    staffOptions:
+      '/performance/staff-options',
   },
 
   alerts:
@@ -118,5 +121,11 @@ export const API_ENDPOINTS = {
 
     xlsx:
       '/reports/performance/xlsx',
+
+   saved:
+  '/reports/saved',
+
+history:
+  '/reports/history',
   },
 } as const;

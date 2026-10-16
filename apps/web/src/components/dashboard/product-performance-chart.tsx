@@ -4,49 +4,38 @@ import {
   Typography,
 } from '@mui/material';
 
-import ReactECharts from 'echarts-for-react';
+import {
+  OptimizedECharts,
+} from './optimized-echarts';
 
 import type {
   ProductPerformanceRow,
 } from '../../types/dashboard.types';
 
 interface ProductPerformanceChartProps {
-  data:
-    ProductPerformanceRow[];
+  data: ProductPerformanceRow[];
 }
 
 export function ProductPerformanceChart({
   data,
 }: ProductPerformanceChartProps) {
   const option = {
-    animation:
-      true,
+    animation: true,
 
     tooltip: {
-      trigger:
-        'axis',
+      trigger: 'axis',
 
       axisPointer: {
-        type:
-          'shadow',
+        type: 'shadow',
       },
     },
 
     legend: {
-      bottom:
-        0,
-
-      left:
-        'center',
-
-      itemWidth:
-        16,
-
-      itemHeight:
-        10,
-
-      itemGap:
-        18,
+      bottom: 0,
+      left: 'center',
+      itemWidth: 16,
+      itemHeight: 10,
+      itemGap: 18,
 
       data: [
         'Engaged',
@@ -56,61 +45,33 @@ export function ProductPerformanceChart({
     },
 
     grid: {
-      left:
-        55,
-
-      right:
-        25,
-
-      top:
-        35,
-
-      bottom:
-        105,
-
-      containLabel:
-        true,
+      left: 55,
+      right: 25,
+      top: 35,
+      bottom: 105,
+      containLabel: true,
     },
 
     xAxis: {
-      type:
-        'category',
+      type: 'category',
 
-      data:
-        data.map(
-          (item) =>
-            item.name,
-        ),
+      data: data.map(
+        (item) => item.name,
+      ),
 
       axisTick: {
-        alignWithLabel:
-          true,
+        alignWithLabel: true,
       },
 
       axisLabel: {
-        interval:
-          0,
+        interval: 0,
+        rotate: 25,
+        margin: 18,
+        hideOverlap: false,
 
-        rotate:
-          25,
-
-        margin:
-          18,
-
-        hideOverlap:
-          false,
-
-        formatter: (
-          value: string,
-        ) => {
-          if (
-            value.length >
-            18
-          ) {
-            return `${value.slice(
-              0,
-              16,
-            )}…`;
+        formatter: (value: string) => {
+          if (value.length > 18) {
+            return `${value.slice(0, 16)}…`;
           }
 
           return value;
@@ -119,73 +80,47 @@ export function ProductPerformanceChart({
     },
 
     yAxis: {
-      type:
-        'value',
-
-      min:
-        0,
+      type: 'value',
+      min: 0,
 
       axisLabel: {
-        margin:
-          12,
+        margin: 12,
       },
 
       splitLine: {
-        show:
-          true,
+        show: true,
       },
     },
 
     series: [
       {
-        name:
-          'Engaged',
+        name: 'Engaged',
+        type: 'bar',
+        barMaxWidth: 34,
 
-        type:
-          'bar',
-
-        barMaxWidth:
-          34,
-
-        data:
-          data.map(
-            (item) =>
-              item.customersEngaged,
-          ),
+        data: data.map(
+          (item) => item.customersEngaged,
+        ),
       },
 
       {
-        name:
-          'Activations',
+        name: 'Activations',
+        type: 'bar',
+        barMaxWidth: 34,
 
-        type:
-          'bar',
-
-        barMaxWidth:
-          34,
-
-        data:
-          data.map(
-            (item) =>
-              item.activations,
-          ),
+        data: data.map(
+          (item) => item.activations,
+        ),
       },
 
       {
-        name:
-          'Transactions',
+        name: 'Transactions',
+        type: 'bar',
+        barMaxWidth: 34,
 
-        type:
-          'bar',
-
-        barMaxWidth:
-          34,
-
-        data:
-          data.map(
-            (item) =>
-              item.transactions,
-          ),
+        data: data.map(
+          (item) => item.transactions,
+        ),
       },
     ],
   };
@@ -194,17 +129,10 @@ export function ProductPerformanceChart({
     <Card
       elevation={0}
       sx={{
-        height:
-          '100%',
-
-        border:
-          '1px solid',
-
-        borderColor:
-          'divider',
-
-        borderRadius:
-          2,
+        height: '100%',
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 2,
       }}
     >
       <CardContent
@@ -228,40 +156,20 @@ export function ProductPerformanceChart({
           Product Performance
         </Typography>
 
-        {data.length ===
-        0 ? (
+        {data.length === 0 ? (
           <Typography
             color="text.secondary"
             sx={{
-              minHeight:
-                360,
-
-              display:
-                'grid',
-
-              placeItems:
-                'center',
+              minHeight: 360,
+              display: 'grid',
+              placeItems: 'center',
             }}
           >
-            No product performance
-            data available for the
-            selected period.
+            No product performance data available
+            for the selected period.
           </Typography>
         ) : (
-          <ReactECharts
-            option={
-              option
-            }
-            notMerge
-            lazyUpdate
-            style={{
-              width:
-                '100%',
-
-              height:
-                '380px',
-            }}
-          />
+<OptimizedECharts option={option} />
         )}
       </CardContent>
     </Card>

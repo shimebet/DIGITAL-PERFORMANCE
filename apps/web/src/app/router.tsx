@@ -1,52 +1,184 @@
-import { Navigate, createBrowserRouter } from "react-router-dom";
+import {
+  lazy,
+  Suspense,
+} from 'react';
 
-import { AuthLayout } from "../layouts/auth-layout";
+import {
+  Navigate,
+  createBrowserRouter,
+} from 'react-router-dom';
 
-import { AppLayout } from "../layouts/app-layout";
+import {
+  Box,
+  CircularProgress,
+  Typography,
+} from '@mui/material';
 
-import { ProtectedRoute } from "../features/auth/protected-route";
+import { AuthLayout } from '../layouts/auth-layout';
+import { AppLayout } from '../layouts/app-layout';
+import { ProtectedRoute } from '../features/auth/protected-route';
+import { AccessRoute } from '../features/auth/access-route';
+import { ROLE } from './navigation';
 
-import { AccessRoute } from "../features/auth/access-route";
+// ============================================================================
+// LAZY-LOADED PAGES
+// ============================================================================
 
-import { ROLE } from "./navigation";
+const LoginPage = lazy(() =>
+  import('../pages/login-page').then((module) => ({
+    default: module.LoginPage,
+  })),
+);
 
-import { LoginPage } from "../pages/login-page";
+const DashboardPage = lazy(() =>
+  import('../pages/dashboard-page').then((module) => ({
+    default: module.DashboardPage,
+  })),
+);
 
-import { DashboardPage } from "../pages/dashboard-page";
+const ChangePasswordPage = lazy(() =>
+  import('../pages/change-password-page').then((module) => ({
+    default: module.ChangePasswordPage,
+  })),
+);
 
-import { ChangePasswordPage } from "../pages/change-password-page";
+const ForbiddenPage = lazy(() =>
+  import('../pages/forbidden-page').then((module) => ({
+    default: module.ForbiddenPage,
+  })),
+);
 
-import { ForbiddenPage } from "../pages/forbidden-page";
+const NotFoundPage = lazy(() =>
+  import('../pages/not-found-page').then((module) => ({
+    default: module.NotFoundPage,
+  })),
+);
 
-import { NotFoundPage } from "../pages/not-found-page";
+const ActivitiesPage = lazy(() =>
+  import('../pages/activities-page').then((module) => ({
+    default: module.ActivitiesPage,
+  })),
+);
 
-import { ActivitiesPage } from "../pages/activities-page";
+const SubmissionsPage = lazy(() =>
+  import('../pages/submissions-page').then((module) => ({
+    default: module.SubmissionsPage,
+  })),
+);
 
-import { SubmissionsPage } from "../pages/submissions-page";
+const FollowUpsPage = lazy(() =>
+  import('../pages/follow-ups-page').then((module) => ({
+    default: module.FollowUpsPage,
+  })),
+);
 
-import { FollowUpsPage } from "../pages/follow-ups-page";
+const TargetsPage = lazy(() =>
+  import('../pages/targets-page').then((module) => ({
+    default: module.TargetsPage,
+  })),
+);
 
-import { TargetsPage } from "../pages/targets-page";
+const PerformancePage = lazy(() =>
+  import('../pages/performance-page').then((module) => ({
+    default: module.PerformancePage,
+  })),
+);
 
-import { PerformancePage } from "../pages/performance-page";
+const AlertsPage = lazy(() =>
+  import('../pages/alerts-page').then((module) => ({
+    default: module.AlertsPage,
+  })),
+);
 
-import { AlertsPage } from "../pages/alerts-page";
+const AiInsightsPage = lazy(() =>
+  import('../pages/ai-insights-page').then((module) => ({
+    default: module.AiInsightsPage,
+  })),
+);
 
-import { AiInsightsPage } from "../pages/ai-insights-page";
+const ReportsPage = lazy(() =>
+  import('../pages/reports-page').then((module) => ({
+    default: module.ReportsPage,
+  })),
+);
 
-import { ReportsPage } from "../pages/reports-page";
+const RegionsPage = lazy(() =>
+  import('../pages/regions-page').then((module) => ({
+    default: module.RegionsPage,
+  })),
+);
 
-import { RegionsPage } from "../pages/regions-page";
+const DistrictsPage = lazy(() =>
+  import('../pages/districts-page').then((module) => ({
+    default: module.DistrictsPage,
+  })),
+);
 
-import { DistrictsPage } from "../pages/districts-page";
+const BranchesPage = lazy(() =>
+  import('../pages/branches-page').then((module) => ({
+    default: module.BranchesPage,
+  })),
+);
 
-import { BranchesPage } from "../pages/branches-page";
+const UsersPage = lazy(() =>
+  import('../pages/users-page').then((module) => ({
+    default: module.UsersPage,
+  })),
+);
 
-import { UsersPage } from "../pages/users-page";
+const ProductsPage = lazy(() =>
+  import('../pages/products-page').then((module) => ({
+    default: module.ProductsPage,
+  })),
+);
 
-import { ProductsPage } from "../pages/products-page";
+const ProfilePage = lazy(() =>
+  import('../pages/profile-page').then((module) => ({
+    default: module.ProfilePage,
+  })),
+);
 
-import { ProfilePage } from "../pages/profile-page";
+// ============================================================================
+// LOADING FALLBACK
+// ============================================================================
+
+function PageLoading() {
+  return (
+    <Box
+      role="status"
+      aria-live="polite"
+      sx={{
+        minHeight: '45vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
+      }}
+    >
+      <CircularProgress size={36} />
+
+      <Typography
+        variant="body2"
+        color="text.secondary"
+      >
+        Loading page...
+      </Typography>
+    </Box>
+  );
+}
+
+function LazyPage({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <Suspense fallback={<PageLoading />}>
+      {children}
+    </Suspense>
+  );
+}
 
 // ============================================================================
 // ROLE GROUPS
@@ -59,9 +191,15 @@ const ORGANIZATION_ADMIN_ROLES = [
   ROLE.DISTRICT_MANAGER,
 ];
 
-const USER_ADMIN_ROLES = [ROLE.SUPER_ADMIN, ROLE.SYSTEM_ADMIN];
+const USER_ADMIN_ROLES = [
+  ROLE.SUPER_ADMIN,
+  ROLE.SYSTEM_ADMIN,
+];
 
-const PRODUCT_ADMIN_ROLES = [ROLE.SUPER_ADMIN, ROLE.SYSTEM_ADMIN];
+const PRODUCT_ADMIN_ROLES = [
+  ROLE.SUPER_ADMIN,
+  ROLE.SYSTEM_ADMIN,
+];
 
 const AI_ROLES = [
   ROLE.SUPER_ADMIN,
@@ -90,268 +228,261 @@ const REPORT_ROLES = [
 // ============================================================================
 
 export const router = createBrowserRouter([
-  // ------------------------------------------------------------------------
   // PUBLIC / AUTH ROUTES
-  // ------------------------------------------------------------------------
-
   {
     element: <AuthLayout />,
-
     children: [
       {
-        path: "/login",
-
-        element: <LoginPage />,
+        path: '/login',
+        element: (
+          <LazyPage>
+            <LoginPage />
+          </LazyPage>
+        ),
       },
     ],
   },
 
-  // ------------------------------------------------------------------------
   // AUTHENTICATED ROUTES
-  // ------------------------------------------------------------------------
-
   {
     element: <ProtectedRoute />,
-
     children: [
-      // --------------------------------------------------------------------
-      // CHANGE PASSWORD
-      // --------------------------------------------------------------------
-
       {
-        path: "/change-password",
-
-        element: <ChangePasswordPage />,
+        path: '/change-password',
+        element: (
+          <LazyPage>
+            <ChangePasswordPage />
+          </LazyPage>
+        ),
       },
 
-      // --------------------------------------------------------------------
       // MAIN APPLICATION
-      // --------------------------------------------------------------------
-
       {
         element: <AppLayout />,
-
         children: [
-          // ----------------------------------------------------------------
-          // ROOT
-          // ----------------------------------------------------------------
-
           {
-            path: "/",
-
-            element: <Navigate to="/dashboard" replace />,
+            path: '/',
+            element: (
+              <Navigate
+                to="/dashboard"
+                replace
+              />
+            ),
           },
 
-          // ----------------------------------------------------------------
           // DASHBOARD
-          // ----------------------------------------------------------------
-
           {
-            path: "/dashboard",
-
+            path: '/dashboard',
             element: (
               <AccessRoute permission="dashboard.read">
-                <DashboardPage />
+                <LazyPage>
+                  <DashboardPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
-          // ----------------------------------------------------------------
           // OPERATIONS
-          // ----------------------------------------------------------------
-
           {
-            path: "/activities",
-
+            path: '/activities',
             element: (
               <AccessRoute permission="activity.read">
-                <ActivitiesPage />
+                <LazyPage>
+                  <ActivitiesPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
           {
-            path: "/submissions",
-
+            path: '/submissions',
             element: (
               <AccessRoute permission="submission.read">
-                <SubmissionsPage />
+                <LazyPage>
+                  <SubmissionsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
           {
-            path: "/follow-ups",
-
+            path: '/follow-ups',
             element: (
               <AccessRoute permission="followup.read">
-                <FollowUpsPage />
+                <LazyPage>
+                  <FollowUpsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
           {
-            path: "/targets",
-
+            path: '/targets',
             element: (
               <AccessRoute permission="target.read">
-                <TargetsPage />
+                <LazyPage>
+                  <TargetsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
-          // ----------------------------------------------------------------
           // MANAGEMENT / ANALYTICS
-          // ----------------------------------------------------------------
-
           {
-            path: "/performance",
-
+            path: '/performance',
             element: (
               <AccessRoute permission="report.read">
-                <PerformancePage />
+                <LazyPage>
+                  <PerformancePage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
           {
-            path: "/alerts",
-
+            path: '/alerts',
             element: (
               <AccessRoute permission="alert.read">
-                <AlertsPage />
+                <LazyPage>
+                  <AlertsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
           {
-            path: "/ai-insights",
-
+            path: '/ai-insights',
             element: (
-              <AccessRoute permission="ai.read" roles={AI_ROLES}>
-                <AiInsightsPage />
+              <AccessRoute
+                permission="ai.read"
+                roles={AI_ROLES}
+              >
+                <LazyPage>
+                  <AiInsightsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
           {
-            path: "/reports",
-
+            path: '/reports',
             element: (
-              <AccessRoute permission="report.read" roles={REPORT_ROLES}>
-                <ReportsPage />
+              <AccessRoute
+                permission="report.read"
+                roles={REPORT_ROLES}
+              >
+                <LazyPage>
+                  <ReportsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
-          // ----------------------------------------------------------------
           // ADMINISTRATION - ORGANIZATION
-          // ----------------------------------------------------------------
-
           {
-            path: "/admin/regions",
-
+            path: '/admin/regions',
             element: (
               <AccessRoute
                 permission="region.read"
                 roles={ORGANIZATION_ADMIN_ROLES}
               >
-                <RegionsPage />
+                <LazyPage>
+                  <RegionsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
           {
-            path: "/admin/districts",
-
+            path: '/admin/districts',
             element: (
               <AccessRoute
                 permission="district.read"
                 roles={ORGANIZATION_ADMIN_ROLES}
               >
-                <DistrictsPage />
+                <LazyPage>
+                  <DistrictsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
           {
-            path: "/admin/branches",
-
+            path: '/admin/branches',
             element: (
               <AccessRoute
                 permission="branch.read"
                 roles={ORGANIZATION_ADMIN_ROLES}
               >
-                <BranchesPage />
+                <LazyPage>
+                  <BranchesPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
-          // ----------------------------------------------------------------
           // ADMINISTRATION - USERS / SECURITY
-          // ----------------------------------------------------------------
-
-   {
-  path: "/admin/users",
-
-  element: (
-    <AccessRoute
-      permission="user.read"
-      roles={USER_ADMIN_ROLES}
-      requireGlobalAdmin
-    >
-      <UsersPage />
-    </AccessRoute>
-  ),
-},
-          // ----------------------------------------------------------------
-          // ADMINISTRATION - PRODUCTS
-          // ----------------------------------------------------------------
-
           {
-            path: "/admin/products",
+            path: '/admin/users',
+            element: (
+              <AccessRoute
+                permission="user.read"
+                roles={USER_ADMIN_ROLES}
+                requireGlobalAdmin
+              >
+                <LazyPage>
+                  <UsersPage />
+                </LazyPage>
+              </AccessRoute>
+            ),
+          },
 
+          // ADMINISTRATION - PRODUCTS
+          {
+            path: '/admin/products',
             element: (
               <AccessRoute
                 permission="product.read"
                 roles={PRODUCT_ADMIN_ROLES}
               >
-                <ProductsPage />
+                <LazyPage>
+                  <ProductsPage />
+                </LazyPage>
               </AccessRoute>
             ),
           },
 
-          // ----------------------------------------------------------------
           // PROFILE
-          // ----------------------------------------------------------------
-
           {
-            path: "/profile",
-
-            element: <ProfilePage />,
+            path: '/profile',
+            element: (
+              <LazyPage>
+                <ProfilePage />
+              </LazyPage>
+            ),
           },
 
-          // ----------------------------------------------------------------
           // FORBIDDEN
-          // ----------------------------------------------------------------
-
           {
-            path: "/forbidden",
-
-            element: <ForbiddenPage />,
+            path: '/forbidden',
+            element: (
+              <LazyPage>
+                <ForbiddenPage />
+              </LazyPage>
+            ),
           },
         ],
       },
     ],
   },
 
-  // ------------------------------------------------------------------------
   // NOT FOUND
-  // ------------------------------------------------------------------------
-
   {
-    path: "*",
-
-    element: <NotFoundPage />,
+    path: '*',
+    element: (
+      <LazyPage>
+        <NotFoundPage />
+      </LazyPage>
+    ),
   },
 ]);

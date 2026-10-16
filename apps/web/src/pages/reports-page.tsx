@@ -1,10 +1,11 @@
 // src/pages/reports-page.tsx
 
 import {
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
-
 import type {
   MouseEvent,
 } from 'react';
@@ -17,7 +18,11 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  FormControl,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Stack,
   Table,
   TableBody,
@@ -39,6 +44,7 @@ import {
 
 import {
   useQuery,
+  useQueryClient,
 } from '@tanstack/react-query';
 
 import {
@@ -46,6 +52,9 @@ import {
   exportPerformanceXlsxApi,
   getPerformanceReportApi,
 } from '../api/reports.api';
+import {
+  getStaffOptionsApi,
+} from '../api/dashboard.api';
 
 import {
   OrganizationFilter,
@@ -62,6 +71,27 @@ import {
 import type {
   ReportQuery,
 } from '../types/report.types';
+import {
+  runSavedReportApi,
+} from '../api/saved-reports.api';
+
+import {
+  SavedReportsPanel,
+} from '../components/reports/saved-reports-panel';
+
+import type {
+  SavedReport,
+} from '../types/saved-report.types';
+
+import {
+  ReportHistoryPanel,
+} from '../components/reports/report-history-panel';
+
+
+
+
+
+
 
 // ============================================================================
 // TYPES
@@ -173,7 +203,7 @@ function toDateInputValue(
   const month =
     String(
       date.getMonth() +
-        1,
+      1,
     ).padStart(
       2,
       '0',
@@ -208,7 +238,7 @@ function startOfWeek(
 
   result.setDate(
     result.getDate() +
-      difference,
+    difference,
   );
 
   return result;
@@ -370,11 +400,35 @@ export function ReportsPage() {
       (state) =>
         state.setEndDate,
     );
-
+  const applyReportFilters =
+    useFilterStore(
+      (state) =>
+        state.applyReportFilters,
+    );
   // ==========================================================================
   // LOCAL STATE
   // ==========================================================================
+  // Keep the staff selection local to Reports.
+  // Store the branch alongside the staff ID to prevent
+  // a stale selection when the organization filter changes.
+  const [
+    staffSelection,
+    setStaffSelection,
+  ] = useState<{
+    branchId: string;
+    staffId: string;
+  } | null>(null);
+  const queryClient = useQueryClient();
 
+  const refreshReportHistory = () => {
+void queryClient.invalidateQueries({
+  queryKey: ['reports', 'history'],
+});
+  };
+  const selectedStaffId =
+    staffSelection?.branchId === branchId
+      ? staffSelection.staffId
+      : '';
   const [
     periodPreset,
     setPeriodPreset,
@@ -406,7 +460,15 @@ export function ReportsPage() {
     useState<
       string | null
     >(null);
+  const [
+    savedReportError,
+    setSavedReportError,
+  ] = useState<string | null>(null);
 
+  const [
+    runningSavedReportId,
+    setRunningSavedReportId,
+  ] = useState<string | null>(null);
   // ==========================================================================
   // PERMISSIONS
   // ==========================================================================
@@ -419,23 +481,57 @@ export function ReportsPage() {
     user?.roles.some(
       (role) =>
         role ===
-          'SUPER_ADMIN' ||
+        'SUPER_ADMIN' ||
         role ===
-          'SYSTEM_ADMIN' ||
+        'SYSTEM_ADMIN' ||
         role ===
-          'REGIONAL_MANAGER' ||
+        'REGIONAL_MANAGER' ||
         role ===
-          'REGIONAL_ANALYST' ||
+        'REGIONAL_ANALYST' ||
         role ===
-          'DISTRICT_MANAGER' ||
+        'DISTRICT_MANAGER' ||
         role ===
-          'DISTRICT_ANALYST' ||
+        'DISTRICT_ANALYST' ||
         role ===
-          'BRANCH_MANAGER' ||
+        'BRANCH_MANAGER' ||
         role ===
-          'AUDITOR',
+        'AUDITOR',
     ) ?? false;
+  // ==========================================================================
+  // STAFF OPTIONS
+  // ==========================================================================
 
+  const staffOptionsResult = useQuery({
+    queryKey: [
+      'report-staff-options',
+      user?.id,
+      branchId,
+    ],
+
+    queryFn: () =>
+      getStaffOptionsApi(branchId!),
+
+    enabled:
+      Boolean(user && branchId),
+  });
+
+  const staffOptions =
+    staffOptionsResult.data ?? [];
+
+  const selectedStaffIsAvailable =
+    selectedStaffId !== '' &&
+    staffOptionsResult.isSuccess &&
+    staffOptions.some(
+      (staff) =>
+        staff.staffId === selectedStaffId,
+    );
+
+  // Only include a selected staff ID after the
+  // options for the current branch have been verified.
+  const effectiveStaffId =
+    selectedStaffIsAvailable
+      ? selectedStaffId
+      : '';
   // ==========================================================================
   // REPORT QUERY
   // ==========================================================================
@@ -445,72 +541,223 @@ export function ReportsPage() {
       () => ({
         ...(regionId
           ? {
-              regionId,
-            }
+            regionId,
+          }
           : {}),
 
         ...(districtId
           ? {
-              districtId,
-            }
+            districtId,
+          }
           : {}),
 
         ...(branchId
           ? {
-              branchId,
-            }
+            branchId,
+          }
           : {}),
-
+        ...(effectiveStaffId
+          ? {
+            staffId: effectiveStaffId,
+          }
+          : {}),
         ...(productId
           ? {
-              productId,
-            }
+            productId,
+          }
           : {}),
 
         ...(startDate
           ? {
-              startDate,
-            }
+            startDate,
+          }
           : {}),
 
         ...(endDate
           ? {
-              endDate,
-            }
+            endDate,
+          }
           : {}),
       }),
       [
         regionId,
         districtId,
         branchId,
+        effectiveStaffId,
         productId,
         startDate,
         endDate,
       ],
     );
+  const staffSelectionPending =
+    selectedStaffId !== '' &&
+    !selectedStaffIsAvailable;
 
-  const reportResult =
-    useQuery({
-      queryKey: [
-        'performance-report',
-        user?.id,
-        reportQuery,
-      ],
+  const staffSelectionInvalid =
+    selectedStaffId !== '' &&
+    staffOptionsResult.isSuccess &&
+    !selectedStaffIsAvailable;
 
-      queryFn: () =>
-        getPerformanceReportApi(
-          reportQuery,
-        ),
+  const canRunReport =
+    Boolean(user) &&
+    !staffSelectionPending;
+// ============================================================================
+// PERFORMANCE REPORT QUERY
+// ============================================================================
 
-      enabled:
-        Boolean(
-          user,
-        ),
+const reportResult = useQuery({
+  queryKey: [
+    'performance-report',
+    user?.id,
+    reportQuery,
+  ],
+
+  queryFn: () =>
+    getPerformanceReportApi(
+      reportQuery,
+    ),
+
+  // Only fetch when the user and staff filters are valid.
+  enabled: canRunReport,
+
+  // Prevent unnecessary automatic report generation.
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
+  refetchOnMount: false,
+
+  // Prevent automatic retry requests from generating
+  // duplicate audit history entries.
+  retry: false,
+
+  // Cache successful reports for five minutes.
+  staleTime: 5 * 60 * 1000,
+});
+
+// ============================================================================
+// REPORT HISTORY SYNCHRONIZATION
+// ============================================================================
+
+// Remember which successful report update has already
+// triggered a history refresh.
+const lastHistorySyncRef = useRef<{
+  userId: string | undefined;
+  dataUpdatedAt: number;
+} | null>(null);
+
+useEffect(() => {
+  // Do not refresh history before the user is available
+  // or before the report query succeeds.
+  if (
+    !user ||
+    !reportResult.isSuccess ||
+    !reportResult.dataUpdatedAt
+  ) {
+    return;
+  }
+
+  const lastSync =
+    lastHistorySyncRef.current;
+
+  // Avoid refreshing history repeatedly for the same
+  // successful report update.
+  if (
+    lastSync?.userId === user.id &&
+    lastSync.dataUpdatedAt ===
+      reportResult.dataUpdatedAt
+  ) {
+    return;
+  }
+
+  // Record the successful update before invalidating
+  // the history query.
+  lastHistorySyncRef.current = {
+    userId: user.id,
+    dataUpdatedAt:
+      reportResult.dataUpdatedAt,
+  };
+
+  // Refresh the Report Generation History panel.
+  void queryClient.invalidateQueries({
+    queryKey: [
+      'reports',
+      'history',
+    ],
+  });
+}, [
+  user?.id,
+  reportResult.isSuccess,
+  reportResult.dataUpdatedAt,
+  queryClient,
+]);
+
+// ============================================================================
+// REPORT DATA
+// ============================================================================
+
+const report =
+  reportResult.data;
+
+  // ==========================================================================
+  // SAVED REPORTS
+  // ==========================================================================
+
+  const handleLoadSavedReport = (
+    savedReport: SavedReport,
+  ) => {
+    setSavedReportError(null);
+
+    const filters = savedReport.filters;
+
+    applyReportFilters({
+      regionId: filters.regionId,
+      districtId: filters.districtId,
+      branchId: filters.branchId,
+      productId: filters.productId,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
     });
 
-  const report =
-    reportResult.data;
+    setStaffSelection(
+      filters.staffId && filters.branchId
+        ? {
+          branchId: filters.branchId,
+          staffId: filters.staffId,
+        }
+        : null,
+    );
 
+    setPeriodPreset('CUSTOM');
+    setExportError(null);
+  };
+
+  const handleRunSavedReport = async (
+    savedReport: SavedReport,
+  ) => {
+    if (runningSavedReportId) {
+      return;
+    }
+
+    setSavedReportError(null);
+    setRunningSavedReportId(savedReport.id);
+
+    try {
+      // The backend revalidates the user's scope
+      // before executing the saved report.
+      await runSavedReportApi(savedReport.id);
+
+      refreshReportHistory();
+
+      // Restore filters so the existing Reports page
+      // displays the selected saved report.
+      handleLoadSavedReport(savedReport);
+    } catch {
+      setSavedReportError(
+        'Unable to run the saved report. Check your permissions and saved filters.',
+      );
+    } finally {
+      setRunningSavedReportId(null);
+    }
+  };
   // ==========================================================================
   // PERIOD PRESETS
   // ==========================================================================
@@ -622,6 +869,8 @@ export function ReportsPage() {
             reportQuery,
           );
 
+        refreshReportHistory();
+
         downloadBlob(
           blob,
           `performance-report-${startDate || 'start'}-${endDate || 'end'}.csv`,
@@ -636,7 +885,9 @@ export function ReportsPage() {
         );
       }
     };
-
+  if (!canRunReport) {
+    return;
+  }
   // ==========================================================================
   // EXPORT XLSX
   // ==========================================================================
@@ -657,6 +908,8 @@ export function ReportsPage() {
             reportQuery,
           );
 
+        refreshReportHistory();
+
         downloadBlob(
           blob,
           `performance-report-${startDate || 'start'}-${endDate || 'end'}.xlsx`,
@@ -671,7 +924,9 @@ export function ReportsPage() {
         );
       }
     };
-
+  if (!canRunReport) {
+    return;
+  }
   // ==========================================================================
   // LOADING
   // ==========================================================================
@@ -704,41 +959,54 @@ export function ReportsPage() {
   // LOAD ERROR
   // ==========================================================================
 
-  if (
-    reportResult.isError
-  ) {
+  if (reportResult.isError) {
     return (
-      <Stack
-        spacing={2}
-      >
+      <Stack spacing={3}>
         <Typography
           variant="h4"
-          sx={{
-            fontWeight:
-              700,
-          }}
+          sx={{ fontWeight: 700 }}
         >
           Performance Reports
         </Typography>
 
-        <Alert
-          severity="error"
-        >
+        {user && (
+          <SavedReportsPanel
+            userId={user.id}
+            currentFilters={reportQuery}
+            canSave={false}
+            onLoad={handleLoadSavedReport}
+            onRun={(savedReport) => {
+              void handleRunSavedReport(savedReport);
+            }}
+          />
+        )}
+
+        {runningSavedReportId && (
+          <Alert severity="info">
+            Running saved report...
+          </Alert>
+        )}
+
+        {savedReportError && (
+          <Alert severity="error">
+            {savedReportError}
+          </Alert>
+        )}
+
+        <Alert severity="error">
           Unable to load the performance report.
+          You can load another saved report
+          or retry the current request.
         </Alert>
 
         <Button
           variant="outlined"
-          startIcon={
-            <RefreshOutlined />
-          }
-          onClick={() =>
-            reportResult.refetch()
-          }
-          sx={{
-            alignSelf:
-              'flex-start',
+          startIcon={<RefreshOutlined />}
+          onClick={() => {
+            void reportResult.refetch();
           }}
+          sx={{ alignSelf: 'flex-start' }}
+          disabled={!canRunReport || reportResult.isFetching}
         >
           Retry
         </Button>
@@ -753,6 +1021,25 @@ export function ReportsPage() {
   const summary =
     report.summary;
 
+  // ==========================================================================
+  // TARGET DISPLAY POLICY
+  //
+  // Match the Dashboard's existing behavior.
+  // A positive target means an applicable target exists.
+  // Zero currently represents "Not assigned" in the API.
+  // Monthly targets are not prorated.
+  // ==========================================================================
+
+  const hasAssignedTarget =
+    Number(summary.achievement.target) > 0;
+
+  const targetDisplayValue = hasAssignedTarget
+    ? formatNumber(summary.achievement.target)
+    : 'Not assigned';
+
+  const achievementDisplayValue = hasAssignedTarget
+    ? formatPercent(summary.achievement.percentage)
+    : 'N/A';
   // ==========================================================================
   // RENDER
   // ==========================================================================
@@ -839,7 +1126,8 @@ export function ReportsPage() {
               reportResult.refetch()
             }
             disabled={
-              reportResult.isFetching
+              reportResult.isFetching ||
+              !canRunReport
             }
           >
             {reportResult.isFetching
@@ -859,7 +1147,8 @@ export function ReportsPage() {
                 }
                 disabled={
                   exportingCsv ||
-                  exportingXlsx
+                  exportingXlsx ||
+                  !canRunReport
                 }
               >
                 {exportingCsv
@@ -888,7 +1177,38 @@ export function ReportsPage() {
           )}
         </Stack>
       </Stack>
+      {/* =====================================================================
+    SAVED REPORTS
+===================================================================== */}
+      <ReportHistoryPanel />
+      {user && (
 
+        <SavedReportsPanel
+          userId={user.id}
+          currentFilters={reportQuery}
+          canSave={
+            canRunReport &&
+            !reportResult.isFetching &&
+            !runningSavedReportId
+          }
+          onLoad={handleLoadSavedReport}
+          onRun={(savedReport) => {
+            void handleRunSavedReport(savedReport);
+          }}
+        />
+      )}
+
+      {runningSavedReportId && (
+        <Alert severity="info">
+          Running saved report...
+        </Alert>
+      )}
+
+      {savedReportError && (
+        <Alert severity="error">
+          {savedReportError}
+        </Alert>
+      )}
       {/* =====================================================================
           REPORT PERIOD PRESETS
       ===================================================================== */}
@@ -1002,7 +1322,116 @@ export function ReportsPage() {
             2,
         }}
       >
-        <OrganizationFilter />
+        <Stack spacing={2}>
+          <OrganizationFilter />
+
+          <Box
+            sx={{
+              maxWidth: 360,
+            }}
+          >
+            <FormControl
+              fullWidth
+              size="small"
+              disabled={
+                !branchId ||
+                staffOptionsResult.isPending ||
+                staffOptionsResult.isFetching ||
+                staffOptionsResult.isError
+              }
+            >
+              <InputLabel id="report-staff-label">
+                Staff
+              </InputLabel>
+
+              <Select
+                labelId="report-staff-label"
+                label="Staff"
+                value={selectedStaffId}
+                onChange={(event) => {
+                  const nextStaffId =
+                    event.target.value;
+
+                  setStaffSelection(
+                    nextStaffId && branchId
+                      ? {
+                        branchId,
+                        staffId: nextStaffId,
+                      }
+                      : null,
+                  );
+                }}
+              >
+                <MenuItem value="">
+                  All Staff
+                </MenuItem>
+
+                {staffOptions.map((staff) => {
+                  const fullName = [
+                    staff.firstName,
+                    staff.middleName,
+                    staff.lastName,
+                  ]
+                    .filter(Boolean)
+                    .join(' ');
+
+                  return (
+                    <MenuItem
+                      key={staff.staffId}
+                      value={staff.staffId}
+                    >
+                      {fullName}
+                      {staff.employeeNumber
+                        ? ` (${staff.employeeNumber})`
+                        : ''}
+                    </MenuItem>
+                  );
+                })}
+              </Select>
+            </FormControl>
+
+            {!branchId && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+              >
+                Select a branch to filter by staff.
+              </Typography>
+            )}
+
+            {branchId &&
+              staffOptionsResult.isFetching && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                >
+                  Loading staff options...
+                </Typography>
+              )}
+
+            {branchId &&
+              staffOptionsResult.isError && (
+                <Alert
+                  severity="error"
+                  sx={{ mt: 1 }}
+                >
+                  Unable to load staff options.
+                </Alert>
+              )}
+
+            {/* Invalid staff selection warning */}
+            {staffSelectionInvalid && (
+              <Alert
+                severity="warning"
+                sx={{ mt: 1 }}
+              >
+                The selected staff member is no longer
+                available in this branch. Select All Staff
+                or choose another staff member.
+              </Alert>
+            )}
+          </Box>
+        </Stack>
       </Paper>
 
       {/* =====================================================================
@@ -1135,10 +1564,12 @@ export function ReportsPage() {
       >
         <SummaryCard
           label="Target"
-          value={formatNumber(
-            summary.achievement.target,
-          )}
-          description="Activation target"
+          value={targetDisplayValue}
+          description={
+            hasAssignedTarget
+              ? 'Activation target'
+              : 'No target assigned'
+          }
         />
 
         <SummaryCard
@@ -1151,10 +1582,12 @@ export function ReportsPage() {
 
         <SummaryCard
           label="Achievement"
-          value={formatPercent(
-            summary.achievement.percentage,
-          )}
-          description="Activations / target"
+          value={achievementDisplayValue}
+          description={
+            hasAssignedTarget
+              ? 'Activations / full target'
+              : 'Target not assigned'
+          }
         />
 
         <SummaryCard
@@ -1245,7 +1678,7 @@ export function ReportsPage() {
         </Box>
 
         {report.trend.length ===
-        0 ? (
+          0 ? (
           <Box
             sx={{
               py:
@@ -1463,7 +1896,7 @@ export function ReportsPage() {
         </Box>
 
         {report.products.length ===
-        0 ? (
+          0 ? (
           <Box
             sx={{
               py:

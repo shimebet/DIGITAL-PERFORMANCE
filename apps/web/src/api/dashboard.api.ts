@@ -16,7 +16,25 @@ import type {
   BranchRankingRow,
 StaffRankingRow,
 } from '../types/dashboard.types';
+import type {
+  StaffOption,
+} from '../types/staff-option.types';
 
+export async function getStaffOptionsApi(
+  branchId: string,
+): Promise<StaffOption[]> {
+  const response =
+    await apiClient.get<StaffOption[]>(
+      API_ENDPOINTS.performance.staffOptions,
+      {
+        params: {
+          branchId,
+        },
+      },
+    );
+
+  return response.data;
+}
 function cleanParams(
   query: DashboardQuery,
 ) {
