@@ -1,6 +1,19 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  RequestMethod,
+} from '@nestjs/common';
+
+import {
+  METHOD_METADATA,
+  PATH_METADATA,
+} from '@nestjs/common/constants';
+
+import {
+  PERMISSIONS_KEY,
+} from '../auth/decorators/permissions.decorator.js';
+
 import { FollowUpsController } from './follow-ups.controller.js';
 import { FollowUpsService } from './follow-ups.service.js';
 
@@ -16,6 +29,8 @@ describe('FollowUpsController', () => {
     findOne: vi.fn(),
     update: vi.fn(),
     updateStatus: vi.fn(),
+    reassign: vi.fn(),
+    reassignmentOptions: vi.fn(),
   };
 
   beforeEach(() => {
@@ -123,6 +138,106 @@ describe('FollowUpsController', () => {
     expect(result).toEqual(expected);
   });
 
+  it('protects the reassignment options route with its dedicated permission', () => {
+    const handler =
+      FollowUpsController.prototype.reassignmentOptions;
+
+    expect(
+      Reflect.getMetadata(PATH_METADATA, handler),
+    ).toBe(':id/reassignment-options');
+
+    expect(
+      Reflect.getMetadata(METHOD_METADATA, handler),
+    ).toBe(RequestMethod.GET);
+
+    expect(
+      Reflect.getMetadata(PERMISSIONS_KEY, handler),
+    ).toEqual(['followup.reassign']);
+  });
+
+  it('retrieves reassignment options for the current user', async () => {
+    const user = {
+      id: 'manager-1',
+    } as Parameters<FollowUpsController['reassignmentOptions']>[1];
+
+    const expected = [
+      {
+        id: 'staff-new',
+        username: 'staffnew',
+        firstName: 'New',
+        lastName: 'Employee',
+      },
+    ];
+
+    followUpsServiceMock.reassignmentOptions.mockResolvedValue(
+      expected,
+    );
+
+    const result = await controller.reassignmentOptions(
+      'follow-up-1',
+      user,
+    );
+
+    expect(
+      followUpsServiceMock.reassignmentOptions,
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      followUpsServiceMock.reassignmentOptions,
+    ).toHaveBeenCalledWith(
+      'follow-up-1',
+      user,
+    );
+
+    expect(result).toEqual(expected);
+  });
+  it('protects the reassignment route with its dedicated permission', () => {
+    const handler = FollowUpsController.prototype.reassign;
+
+    expect(
+      Reflect.getMetadata(PATH_METADATA, handler),
+    ).toBe(':id/reassign');
+
+    expect(
+      Reflect.getMetadata(METHOD_METADATA, handler),
+    ).toBe(RequestMethod.PATCH);
+
+    expect(
+      Reflect.getMetadata(PERMISSIONS_KEY, handler),
+    ).toEqual(['followup.reassign']);
+  });
+  it('reassigns a follow-up to another employee', async () => {
+    const dto = {
+      assignedToUserId: '11111111-1111-4111-8111-111111111111',
+    };
+
+    const user = {
+      id: 'manager-1',
+    } as Parameters<FollowUpsController['reassign']>[2];
+
+    const expected = {
+      id: 'follow-up-1',
+      assignedToUserId: dto.assignedToUserId,
+    };
+
+    followUpsServiceMock.reassign.mockResolvedValue(expected);
+
+    const result = await controller.reassign(
+      'follow-up-1',
+      dto,
+      user,
+    );
+
+    expect(followUpsServiceMock.reassign).toHaveBeenCalledOnce();
+
+    expect(followUpsServiceMock.reassign).toHaveBeenCalledWith(
+      'follow-up-1',
+      dto,
+      user,
+    );
+
+    expect(result).toEqual(expected);
+  });
   it('updates a follow-up status', async () => {
     const dto = {} as Parameters<FollowUpsController['updateStatus']>[1];
     const user = {} as Parameters<FollowUpsController['updateStatus']>[2];

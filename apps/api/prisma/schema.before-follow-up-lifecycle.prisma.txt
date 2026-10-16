@@ -1,0 +1,1220 @@
+// ============================================================================
+// DIGITAL PERFORMANCE MONITORING PLATFORM
+// Prisma Schema
+// Database: MySQL 8
+// ORM: Prisma 7
+// ============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  SUSPENDED
+}
+
+enum ScopeType {
+  GLOBAL
+  REGION
+  DISTRICT
+  BRANCH
+  STAFF
+}
+
+enum TargetPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+enum MetricType {
+  CUSTOMER_VISIT
+  PHONE_CALL
+  CUSTOMER_CONTACT
+  CUSTOMER_ENGAGEMENT
+  ACTIVATION
+  REACTIVATION
+  TRANSACTION
+  FOLLOW_UP
+  CONVERSION_RATE
+  ACHIEVEMENT_RATE
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+  APPROVED
+  RETURNED_FOR_CORRECTION
+  RESUBMITTED
+  REJECTED
+}
+
+enum FollowUpStatus {
+  OPEN
+  CONTACTED
+  RESCHEDULED
+  CONVERTED
+  NOT_INTERESTED
+  UNREACHABLE
+  CLOSED
+}
+
+enum FollowUpPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AlertSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum InsightType {
+  UNDERPERFORMANCE
+  OVERPERFORMANCE
+  ANOMALY
+  TREND
+  FOLLOW_UP_GAP
+  MISSED_SUBMISSION
+  LOW_CONVERSION
+  TARGET_GAP
+  PRODUCT_PERFORMANCE
+  GENERAL
+}
+
+enum RecommendationStatus {
+  NEW
+  ACKNOWLEDGED
+  IN_PROGRESS
+  COMPLETED
+  DISMISSED
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  PASSWORD_CHANGED
+  SUBMIT
+  APPROVE
+  REJECT
+  EXPORT
+  IMPORT
+  ASSIGN
+  UNASSIGN
+  SYSTEM
+}
+
+enum SessionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum ActivitySource {
+  MOBILE
+  WEB
+  API
+  IMPORT
+  SYSTEM
+}
+
+// ============================================================================
+// ORGANIZATIONAL STRUCTURE
+// ============================================================================
+
+model Region {
+  id          String       @id @default(uuid()) @db.Char(36)
+  code        String       @unique @db.VarChar(50)
+  name        String       @db.VarChar(191)
+  description String?      @db.Text
+  status      RecordStatus @default(ACTIVE)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  districts            District[]
+  userRoles            UserRole[]
+  targetAssignments    TargetAssignment[]
+  performanceSnapshots PerformanceSnapshot[]
+  alerts               Alert[]
+  aiInsights           AiInsight[]
+
+  @@index([name])
+  @@index([status])
+  @@map("regions")
+}
+
+model District {
+  id       String @id @default(uuid()) @db.Char(36)
+  regionId String @db.Char(36)
+
+  code        String       @unique @db.VarChar(50)
+  name        String       @db.VarChar(191)
+  description String?      @db.Text
+  status      RecordStatus @default(ACTIVE)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  region Region @relation(fields: [regionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  branches             Branch[]
+  userRoles            UserRole[]
+  targetAssignments    TargetAssignment[]
+  performanceSnapshots PerformanceSnapshot[]
+  alerts               Alert[]
+  aiInsights           AiInsight[]
+
+  @@index([regionId])
+  @@index([name])
+  @@index([status])
+  @@map("districts")
+}
+
+model Branch {
+  id         String @id @default(uuid()) @db.Char(36)
+  districtId String @db.Char(36)
+
+  code String @unique @db.VarChar(50)
+  name String @db.VarChar(191)
+
+  branchType String? @db.VarChar(100)
+
+  phone   String? @db.VarChar(50)
+  email   String? @db.VarChar(191)
+  address String? @db.VarChar(255)
+
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+
+  timezone String @default("Africa/Addis_Ababa") @db.VarChar(100)
+
+  status RecordStatus @default(ACTIVE)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  district District @relation(fields: [districtId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  staffProfiles        StaffProfile[]
+  userRoles            UserRole[]
+  targetAssignments    TargetAssignment[]
+  dailySubmissions     DailySubmission[]
+  activities           Activity[]
+  followUps            FollowUp[]
+  performanceSnapshots PerformanceSnapshot[]
+  alerts               Alert[]
+  aiInsights           AiInsight[]
+
+  @@index([districtId])
+  @@index([name])
+  @@index([status])
+  @@map("branches")
+}
+
+// ============================================================================
+// USERS
+// ============================================================================
+
+model User {
+  id String @id @default(uuid()) @db.Char(36)
+
+  username String  @unique @db.VarChar(100)
+  email    String? @unique @db.VarChar(191)
+  phone    String? @db.VarChar(50)
+
+  passwordHash String @db.VarChar(255)
+
+  firstName  String  @db.VarChar(100)
+  middleName String? @db.VarChar(100)
+  lastName   String  @db.VarChar(100)
+
+  status UserStatus @default(ACTIVE)
+
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  passwordChangedAt   DateTime?
+
+  mfaEnabled Boolean @default(false)
+
+  mustChangePassword Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  staffProfile StaffProfile?
+
+  roles UserRole[]
+
+  dailySubmissions    DailySubmission[] @relation("SubmissionStaff")
+  approvedSubmissions DailySubmission[] @relation("SubmissionApprovedBy")
+
+  activities Activity[] @relation("ActivityStaff")
+
+  createdFollowUps  FollowUp[] @relation("FollowUpCreatedBy")
+  assignedFollowUps FollowUp[] @relation("FollowUpAssignedTo")
+
+  followUpHistories FollowUpHistory[] @relation("FollowUpHistoryUser")
+
+  targetAssignments TargetAssignment[]
+
+  performanceSnapshots PerformanceSnapshot[]
+
+  alertsReceived Alert[] @relation("AlertRecipient")
+
+  notifications Notification[]
+
+  aiInsights AiInsight[] @relation("AiInsightStaff")
+
+  assignedAiRecommendations AiRecommendation[] @relation("AiRecommendationAssignedTo")
+
+  auditLogs AuditLog[]
+
+  savedReports SavedReport[]
+
+  sessions UserSession[]
+
+  refreshTokens RefreshToken[]
+
+  createdTargets Target[] @relation("TargetCreatedBy")
+
+  updatedSettings SystemSetting[] @relation("SystemSettingUpdatedBy")
+
+  @@index([status])
+  @@index([firstName, lastName])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model StaffProfile {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId   String @unique @db.Char(36)
+  branchId String @db.Char(36)
+
+  employeeNumber String? @unique @db.VarChar(100)
+
+  jobTitle String? @db.VarChar(191)
+
+  digitalReskilled Boolean @default(true)
+
+  joinedDate DateTime? @db.Date
+
+  status RecordStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([branchId])
+  @@index([status])
+  @@map("staff_profiles")
+}
+
+// ============================================================================
+// RBAC
+// ============================================================================
+
+model Role {
+  id String @id @default(uuid()) @db.Char(36)
+
+  code String @unique @db.VarChar(100)
+  name String @db.VarChar(191)
+
+  description String? @db.Text
+
+  isSystemRole Boolean @default(false)
+
+  status RecordStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@index([status])
+  @@map("roles")
+}
+
+model Permission {
+  id String @id @default(uuid()) @db.Char(36)
+
+  code String @unique @db.VarChar(191)
+
+  module String @db.VarChar(100)
+
+  action String @db.VarChar(100)
+
+  name String @db.VarChar(191)
+
+  description String? @db.Text
+
+  status RecordStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@index([status])
+  @@map("permissions")
+}
+
+model UserRole {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+  roleId String @db.Char(36)
+
+  scopeType ScopeType @default(GLOBAL)
+
+  regionId   String? @db.Char(36)
+  districtId String? @db.Char(36)
+  branchId   String? @db.Char(36)
+
+  validFrom DateTime?
+  validTo   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  region Region? @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  district District? @relation(fields: [districtId], references: [id], onDelete: Cascade)
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, scopeType, regionId, districtId, branchId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([regionId])
+  @@index([districtId])
+  @@index([branchId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id String @id @default(uuid()) @db.Char(36)
+
+  roleId       String @db.Char(36)
+  permissionId String @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================================
+// PRODUCT / DIGITAL CHANNEL
+// ============================================================================
+
+model Product {
+  id String @id @default(uuid()) @db.Char(36)
+
+  code String @unique @db.VarChar(100)
+
+  name String @db.VarChar(191)
+
+  category String? @db.VarChar(100)
+
+  description String? @db.Text
+
+  status RecordStatus @default(ACTIVE)
+
+  displayOrder Int @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  activityProducts     ActivityProduct[]
+  followUps            FollowUp[]
+  targetAssignments    TargetAssignment[]
+  performanceSnapshots PerformanceSnapshot[]
+  alerts               Alert[]
+  aiInsights           AiInsight[]
+
+  @@index([status])
+  @@index([category])
+  @@map("products")
+}
+
+// ============================================================================
+// TARGETS
+// ============================================================================
+
+model Target {
+  id String @id @default(uuid()) @db.Char(36)
+
+  name String @db.VarChar(191)
+
+  description String? @db.Text
+
+  metricType MetricType
+
+  periodType TargetPeriod
+
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  defaultTargetValue Decimal? @db.Decimal(18, 2)
+
+  status RecordStatus @default(ACTIVE)
+
+  createdByUserId String? @db.Char(36)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  createdBy User? @relation("TargetCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  assignments TargetAssignment[]
+
+  @@index([metricType])
+  @@index([periodType])
+  @@index([startDate, endDate])
+  @@index([status])
+  @@map("targets")
+}
+
+model TargetAssignment {
+  id String @id @default(uuid()) @db.Char(36)
+
+  targetId String @db.Char(36)
+
+  scopeType ScopeType
+
+  regionId   String? @db.Char(36)
+  districtId String? @db.Char(36)
+  branchId   String? @db.Char(36)
+  userId     String? @db.Char(36)
+  productId  String? @db.Char(36)
+
+  targetValue Decimal @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  target Target @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  region Region? @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  district District? @relation(fields: [districtId], references: [id], onDelete: Cascade)
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([targetId])
+  @@index([regionId])
+  @@index([districtId])
+  @@index([branchId])
+  @@index([userId])
+  @@index([productId])
+  @@index([scopeType])
+  @@map("target_assignments")
+}
+
+// ============================================================================
+// DAILY SUBMISSION
+// ============================================================================
+
+model DailySubmission {
+  id String @id @default(uuid()) @db.Char(36)
+
+  staffId  String @db.Char(36)
+  branchId String @db.Char(36)
+
+  submissionDate DateTime @db.Date
+
+  status SubmissionStatus @default(DRAFT)
+
+  submittedAt DateTime?
+
+  reviewedAt DateTime?
+  approvedAt DateTime?
+
+  approvedByUserId String? @db.Char(36)
+
+  returnReason String? @db.Text
+
+  remarks String? @db.Text
+
+  version Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff User @relation("SubmissionStaff", fields: [staffId], references: [id], onDelete: Restrict)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  approvedBy User? @relation("SubmissionApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+
+  activities Activity[]
+
+  @@unique([staffId, branchId, submissionDate])
+  @@index([staffId])
+  @@index([branchId])
+  @@index([submissionDate])
+  @@index([status])
+  @@map("daily_submissions")
+}
+
+// ============================================================================
+// DAILY ACTIVITIES
+// ============================================================================
+
+model Activity {
+  id String @id @default(uuid()) @db.Char(36)
+
+  submissionId String? @db.Char(36)
+
+  staffId  String @db.Char(36)
+  branchId String @db.Char(36)
+
+  activityDate DateTime @db.Date
+
+  source ActivitySource @default(MOBILE)
+
+  customerVisits Int @default(0)
+
+  phoneCalls Int @default(0)
+
+  customersContacted Int @default(0)
+
+  customersEducated Int @default(0)
+
+  activations Int @default(0)
+
+  reactivations Int @default(0)
+
+  transactions Int @default(0)
+
+  followUpsCreated Int @default(0)
+
+  remarks String? @db.Text
+
+  challenges String? @db.Text
+
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  submission DailySubmission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  staff User @relation("ActivityStaff", fields: [staffId], references: [id], onDelete: Restrict)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  products ActivityProduct[]
+
+  followUps FollowUp[]
+
+  @@index([submissionId])
+  @@index([staffId])
+  @@index([branchId])
+  @@index([activityDate])
+  @@index([branchId, activityDate])
+  @@index([staffId, activityDate])
+  @@map("activities")
+}
+
+model ActivityProduct {
+  id String @id @default(uuid()) @db.Char(36)
+
+  activityId String @db.Char(36)
+  productId  String @db.Char(36)
+
+  customersEngaged Int @default(0)
+
+  activations Int @default(0)
+
+  reactivations Int @default(0)
+
+  transactions Int @default(0)
+
+  failedActivations Int @default(0)
+
+  remarks String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([activityId, productId])
+  @@index([activityId])
+  @@index([productId])
+  @@map("activity_products")
+}
+
+// ============================================================================
+// CUSTOMER FOLLOW-UP
+// ============================================================================
+
+model FollowUp {
+  id String @id @default(uuid()) @db.Char(36)
+
+  activityId String? @db.Char(36)
+
+  branchId String @db.Char(36)
+
+  productId String? @db.Char(36)
+
+  createdByUserId  String @db.Char(36)
+  assignedToUserId String @db.Char(36)
+
+  customerReference String? @db.VarChar(191)
+
+  customerNameMasked String? @db.VarChar(191)
+
+  contactReference String? @db.VarChar(191)
+
+  reason String? @db.Text
+
+  priority FollowUpPriority @default(MEDIUM)
+
+  status FollowUpStatus @default(OPEN)
+
+  followUpDate DateTime @db.Date
+
+  nextFollowUpDate DateTime? @db.Date
+
+  completedAt DateTime?
+
+  outcome String? @db.Text
+
+  remarks String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  createdBy User @relation("FollowUpCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  assignedTo User @relation("FollowUpAssignedTo", fields: [assignedToUserId], references: [id], onDelete: Restrict)
+
+  history FollowUpHistory[]
+
+  @@index([activityId])
+  @@index([branchId])
+  @@index([productId])
+  @@index([assignedToUserId])
+  @@index([followUpDate])
+  @@index([status])
+  @@index([priority])
+  @@map("follow_ups")
+}
+
+model FollowUpHistory {
+  id String @id @default(uuid()) @db.Char(36)
+
+  followUpId String @db.Char(36)
+
+  changedByUserId String? @db.Char(36)
+
+  previousStatus FollowUpStatus?
+  newStatus      FollowUpStatus
+
+  note String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  followUp FollowUp @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+
+  changedBy User? @relation("FollowUpHistoryUser", fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([followUpId])
+  @@index([changedByUserId])
+  @@index([createdAt])
+  @@map("follow_up_history")
+}
+
+// ============================================================================
+// PERFORMANCE ANALYTICS
+// ============================================================================
+
+model PerformanceSnapshot {
+  id String @id @default(uuid()) @db.Char(36)
+
+  snapshotDate DateTime @db.Date
+
+  scopeType ScopeType
+
+  regionId   String? @db.Char(36)
+  districtId String? @db.Char(36)
+  branchId   String? @db.Char(36)
+  userId     String? @db.Char(36)
+  productId  String? @db.Char(36)
+
+  customerVisits Int @default(0)
+
+  phoneCalls Int @default(0)
+
+  customersContacted Int @default(0)
+
+  customersEducated Int @default(0)
+
+  activations Int @default(0)
+
+  reactivations Int @default(0)
+
+  transactions Int @default(0)
+
+  targetValue Decimal? @db.Decimal(18, 2)
+
+  conversionRate Decimal? @db.Decimal(8, 4)
+
+  transactionConversionRate Decimal? @db.Decimal(8, 4)
+
+  achievementRate Decimal? @db.Decimal(8, 4)
+
+  submissionRate Decimal? @db.Decimal(8, 4)
+
+  followUpCompletionRate Decimal? @db.Decimal(8, 4)
+
+  calculatedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  region Region? @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  district District? @relation(fields: [districtId], references: [id], onDelete: Cascade)
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotDate])
+  @@index([scopeType])
+  @@index([regionId])
+  @@index([districtId])
+  @@index([branchId])
+  @@index([userId])
+  @@index([productId])
+  @@map("performance_snapshots")
+}
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+model Alert {
+  id String @id @default(uuid()) @db.Char(36)
+
+  title String @db.VarChar(255)
+
+  message String @db.Text
+
+  severity AlertSeverity @default(INFO)
+
+  status AlertStatus @default(OPEN)
+
+  alertType String @db.VarChar(100)
+
+  scopeType ScopeType?
+
+  regionId   String? @db.Char(36)
+  districtId String? @db.Char(36)
+  branchId   String? @db.Char(36)
+  productId  String? @db.Char(36)
+
+  recipientUserId String? @db.Char(36)
+
+  detectedAt DateTime @default(now())
+
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  region Region? @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  district District? @relation(fields: [districtId], references: [id], onDelete: Cascade)
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  recipient User? @relation("AlertRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@index([severity])
+  @@index([status])
+  @@index([alertType])
+  @@index([detectedAt])
+  @@index([branchId])
+  @@index([recipientUserId])
+  @@map("alerts")
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+
+  title String @db.VarChar(255)
+
+  message String @db.Text
+
+  type String? @db.VarChar(100)
+
+  status NotificationStatus @default(UNREAD)
+
+  actionUrl String? @db.VarChar(500)
+
+  metadata Json?
+
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================================
+// AI ANALYTICS
+// ============================================================================
+
+model AiInsight {
+  id String @id @default(uuid()) @db.Char(36)
+
+  insightType InsightType
+
+  title String @db.VarChar(255)
+
+  summary String @db.Text
+
+  details String? @db.LongText
+
+  scopeType ScopeType?
+
+  regionId   String? @db.Char(36)
+  districtId String? @db.Char(36)
+  branchId   String? @db.Char(36)
+  userId     String? @db.Char(36)
+  productId  String? @db.Char(36)
+
+  score Decimal? @db.Decimal(8, 4)
+
+  confidence Decimal? @db.Decimal(8, 4)
+
+  data Json?
+
+  periodStart DateTime? @db.Date
+  periodEnd   DateTime? @db.Date
+
+  generatedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  region Region? @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  district District? @relation(fields: [districtId], references: [id], onDelete: Cascade)
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  user User? @relation("AiInsightStaff", fields: [userId], references: [id], onDelete: Cascade)
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  recommendations AiRecommendation[]
+
+  @@index([insightType])
+  @@index([generatedAt])
+  @@index([regionId])
+  @@index([districtId])
+  @@index([branchId])
+  @@index([userId])
+  @@index([productId])
+  @@map("ai_insights")
+}
+
+model AiRecommendation {
+  id String @id @default(uuid()) @db.Char(36)
+
+  insightId String @db.Char(36)
+
+  assignedToUserId String? @db.Char(36)
+
+  title String @db.VarChar(255)
+
+  recommendation String @db.Text
+
+  priority FollowUpPriority @default(MEDIUM)
+
+  status RecommendationStatus @default(NEW)
+
+  dueDate DateTime? @db.Date
+
+  completedAt DateTime?
+
+  managementResponse String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  insight AiInsight @relation(fields: [insightId], references: [id], onDelete: Cascade)
+
+  assignedTo User? @relation("AiRecommendationAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([insightId])
+  @@index([assignedToUserId])
+  @@index([status])
+  @@index([priority])
+  @@index([dueDate])
+  @@map("ai_recommendations")
+}
+
+// ============================================================================
+// AUDIT
+// ============================================================================
+
+model AuditLog {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String? @db.Char(36)
+
+  action AuditAction
+
+  module String @db.VarChar(100)
+
+  entityType String? @db.VarChar(100)
+
+  entityId String? @db.VarChar(191)
+
+  description String? @db.Text
+
+  oldValue Json?
+  newValue Json?
+
+  ipAddress String? @db.VarChar(100)
+
+  userAgent String? @db.Text
+
+  requestId String? @db.VarChar(191)
+
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([module])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// USER SESSION
+// ============================================================================
+
+model UserSession {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+
+  sessionTokenHash String @unique @db.VarChar(255)
+
+  deviceId String? @db.VarChar(191)
+
+  deviceName String? @db.VarChar(191)
+
+  ipAddress String? @db.VarChar(100)
+
+  userAgent String? @db.Text
+
+  status SessionStatus @default(ACTIVE)
+
+  lastActivityAt DateTime @default(now())
+
+  expiresAt DateTime
+
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+// ============================================================================
+// REFRESH TOKEN
+// ============================================================================
+
+model RefreshToken {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+
+  tokenHash String @unique @db.VarChar(255)
+
+  expiresAt DateTime
+
+  revokedAt DateTime?
+
+  replacedByTokenId String? @db.VarChar(191)
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================================================
+// SYSTEM SETTINGS
+// ============================================================================
+
+model SystemSetting {
+  id String @id @default(uuid()) @db.Char(36)
+
+  key String @unique @db.VarChar(191)
+
+  value Json
+
+  category String? @db.VarChar(100)
+
+  description String? @db.Text
+
+  isPublic Boolean @default(false)
+
+  updatedByUserId String? @db.Char(36)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  updatedBy User? @relation("SystemSettingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([category])
+  @@map("system_settings")
+}
+
+// ============================================================================
+// SAVED REPORT CONFIGURATIONS
+// ============================================================================
+
+model SavedReport {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+
+  name String @db.VarChar(191)
+
+  reportType String @default("PERFORMANCE") @db.VarChar(50)
+
+  filters Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId])
+  @@index([userId, reportType])
+  @@index([createdAt])
+  @@map("saved_reports")
+}

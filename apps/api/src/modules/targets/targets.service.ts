@@ -373,101 +373,6 @@ async findAll(
     currentUser: AuthenticatedUser,
   ) {
     // =========================================================================
-    // TEMPORARY DIAGNOSTICS
-    //
-    // These logs are only for troubleshooting the current Target not found
-    // problem. Remove them after the issue is confirmed and corrected.
-    // =========================================================================
-
-    console.log(
-      'Target assignment request:',
-      {
-        targetId:
-          dto.targetId,
-
-        scopeType:
-          dto.scopeType,
-
-        userId:
-          dto.userId,
-
-        productId:
-          dto.productId,
-
-        targetValue:
-          dto.targetValue,
-      },
-    );
-
-    const currentDatabase =
-      await this.prisma.$queryRaw<
-        Array<{
-          databaseName:
-            string | null;
-        }>
-      >`
-        SELECT DATABASE() AS databaseName
-      `;
-
-    console.log(
-      'Target assignment database:',
-      currentDatabase,
-    );
-
-    // -------------------------------------------------------------------------
-    // RAW DATABASE CHECK
-    //
-    // This checks the physical targets table using the same Prisma connection.
-    // -------------------------------------------------------------------------
-
-    const rawDatabaseTarget =
-      await this.prisma.$queryRaw<
-        Array<{
-          id:
-            string;
-
-          name:
-            string;
-
-          status:
-            string;
-
-          deletedAt:
-            Date | null;
-        }>
-      >`
-        SELECT
-          id,
-          name,
-          status,
-          deletedAt
-        FROM targets
-        WHERE id = ${dto.targetId}
-      `;
-
-    console.log(
-      'Raw database target:',
-      rawDatabaseTarget,
-    );
-
-    // -------------------------------------------------------------------------
-    // PRISMA ID-ONLY CHECK
-    // -------------------------------------------------------------------------
-
-    const rawPrismaTarget =
-      await this.prisma.target.findUnique({
-        where: {
-          id:
-            dto.targetId,
-        },
-      });
-
-    console.log(
-      'Prisma target by ID:',
-      rawPrismaTarget,
-    );
-
-    // -------------------------------------------------------------------------
     // ACTIVE TARGET CHECK
     // -------------------------------------------------------------------------
 
@@ -485,12 +390,7 @@ async findAll(
         },
       });
 
-    console.log(
-      'Prisma active target:',
-      target,
-    );
-
-    if (
+if (
       !target
     ) {
       throw new NotFoundException(

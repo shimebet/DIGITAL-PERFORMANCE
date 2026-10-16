@@ -1,0 +1,1175 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
+import {
+  PrismaService,
+} from '../../database/prisma/prisma.service.js';
+
+import {
+  ScopeService,
+} from '../auth/services/scope.service.js';
+
+import type {
+  AuthenticatedUser,
+} from '../auth/interfaces/authenticated-user.interface.js';
+
+import {
+  CreateFollowUpDto,
+} from './dto/create-follow-up.dto.js';
+
+import {
+  UpdateFollowUpDto,
+} from './dto/update-follow-up.dto.js';
+
+import {
+  UpdateFollowUpStatusDto,
+} from './dto/update-follow-up-status.dto.js';
+
+import {
+  ReassignFollowUpDto,
+} from './dto/reassign-follow-up.dto.js';
+
+@Injectable()
+export class FollowUpsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly scopeService: ScopeService,
+  ) {}
+
+  // ==========================================================================
+  // CREATE
+  // ==========================================================================
+
+  async create(
+    dto: CreateFollowUpDto,
+    currentUser: AuthenticatedUser,
+  ) {
+    const assignedUser =
+      await this.prisma.user.findFirst({
+        where: {
+          id: dto.assignedToUserId,
+          deletedAt: null,
+          status: 'ACTIVE',
+        },
+
+        include: {
+          staffProfile: {
+            include: {
+              branch: {
+                include: {
+                  district: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+    if (!assignedUser) {
+      throw new NotFoundException(
+        'Assigned user not found',
+      );
+    }
+
+    if (!assignedUser.staffProfile) {
+      throw new BadRequestException(
+        'Assigned user does not have a staff profile',
+      );
+    }
+
+    await this.scopeService.assertBranchAccess(
+      currentUser,
+      assignedUser.staffProfile.branchId,
+    );
+
+    if (dto.productId) {
+      const product =
+        await this.prisma.product.findFirst({
+          where: {
+            id: dto.productId,
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+        });
+
+      if (!product) {
+        throw new NotFoundException(
+          'Product not found',
+        );
+      }
+    }
+
+    if (dto.activityId) {
+      const activity =
+        await this.prisma.activity.findUnique({
+          where: {
+            id: dto.activityId,
+          },
+        });
+
+      if (!activity) {
+        throw new NotFoundException(
+          'Activity not found',
+        );
+      }
+
+      await this.scopeService.assertBranchAccess(
+        currentUser,
+        activity.branchId,
+      );
+    }
+
+    const followUp =
+      await this.prisma.followUp.create({
+        data: {
+          activityId: dto.activityId,
+
+          branchId:
+            assignedUser.staffProfile.branchId,
+
+          productId:
+            dto.productId,
+
+          createdByUserId:
+            currentUser.id,
+
+          assignedToUserId:
+            dto.assignedToUserId,
+
+          customerReference:
+            dto.customerReference?.trim(),
+
+          customerNameMasked:
+            dto.customerNameMasked?.trim(),
+
+          contactReference:
+            dto.contactReference?.trim(),
+
+          reason:
+            dto.reason?.trim(),
+
+          priority:
+            dto.priority,
+
+          followUpDate:
+            new Date(dto.followUpDate),
+
+          remarks:
+            dto.remarks?.trim(),
+
+          status:
+            'OPEN',
+        },
+
+        include: {
+          branch: {
+            include: {
+              district: {
+                include: {
+                  region: true,
+                },
+              },
+            },
+          },
+
+          product: true,
+
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+
+          assignedTo: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+    await this.prisma.followUpHistory.create({
+      data: {
+        followUpId:
+          followUp.id,
+
+        changedByUserId:
+          currentUser.id,
+
+        previousStatus:
+          null,
+
+        newStatus:
+          'OPEN',
+
+        note:
+          'Follow-up created',
+      },
+    });
+
+    return followUp;
+  }
+
+  // ==========================================================================
+  // FIND MY ASSIGNED FOLLOW-UPS
+  // ==========================================================================
+
+  async findMine(
+    user: AuthenticatedUser,
+  ) {
+    return this.prisma.followUp.findMany({
+      where: {
+        assignedToUserId:
+          user.id,
+        isEnabled: true,
+        deletedAt: null,
+      },
+
+      include: {
+        product:
+          true,
+
+        branch:
+          true,
+
+        createdBy: {
+          select: {
+            id:
+              true,
+
+            username:
+              true,
+
+            firstName:
+              true,
+
+            lastName:
+              true,
+          },
+        },
+      },
+
+      orderBy: [
+        {
+          followUpDate:
+            'asc',
+        },
+
+        {
+          priority:
+            'desc',
+        },
+      ],
+    });
+  }
+
+  // ==========================================================================
+  // FIND OVERDUE FOR CURRENT USER
+  // ==========================================================================
+
+  async findMyOverdue(
+    user: AuthenticatedUser,
+  ) {
+// Today's Ethiopia-local calendar date, represented
+// as UTC midnight for comparison with MySQL DATE columns.
+const now = new Date();
+
+const ethiopiaToday = new Date(
+  now.getTime() + 3 * 60 * 60 * 1000,
+)
+  .toISOString()
+  .slice(0, 10);
+
+const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
+
+    return this.prisma.followUp.findMany({
+      where: {
+        assignedToUserId:
+          user.id,
+        isEnabled: true,
+        deletedAt: null,
+
+        followUpDate: {
+          lt: today,
+        },
+
+        status: {
+          in: [
+            'OPEN',
+            'CONTACTED',
+            'RESCHEDULED',
+          ],
+        },
+      },
+
+      include: {
+        product:
+          true,
+
+        branch:
+          true,
+      },
+
+      orderBy: {
+        followUpDate:
+          'asc',
+      },
+    });
+  }
+
+  // ==========================================================================
+  // FIND ALL SCOPED
+  // ==========================================================================
+
+  async findAllScoped(
+    user: AuthenticatedUser,
+  ) {
+    if (
+      this.scopeService.isGlobal(
+        user,
+      )
+    ) {
+      return this.prisma.followUp.findMany({
+        where: { deletedAt: null },
+        include: {
+          product:
+            true,
+
+          branch: {
+            include: {
+              district: {
+                include: {
+                  region:
+                    true,
+                },
+              },
+            },
+          },
+
+          assignedTo: {
+            select: {
+              id:
+                true,
+
+              username:
+                true,
+
+              firstName:
+                true,
+
+              lastName:
+                true,
+            },
+          },
+        },
+
+        orderBy: {
+          followUpDate:
+            'desc',
+        },
+      });
+    }
+
+    const regionIds =
+      this.scopeService.getRegionIds(
+        user,
+      );
+
+    const districtIds =
+      this.scopeService.getDistrictIds(
+        user,
+      );
+
+    const branchIds =
+      this.scopeService.getBranchIds(
+        user,
+      );
+
+    return this.prisma.followUp.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          {
+            assignedToUserId:
+              user.id,
+          },
+
+          ...(branchIds.length
+            ? [
+                {
+                  branchId: {
+                    in:
+                      branchIds,
+                  },
+                },
+              ]
+            : []),
+
+          ...(districtIds.length
+            ? [
+                {
+                  branch: {
+                    districtId: {
+                      in:
+                        districtIds,
+                    },
+                  },
+                },
+              ]
+            : []),
+
+          ...(regionIds.length
+            ? [
+                {
+                  branch: {
+                    district: {
+                      regionId: {
+                        in:
+                          regionIds,
+                      },
+                    },
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+
+      include: {
+        product:
+          true,
+
+        branch: {
+          include: {
+            district: {
+              include: {
+                region:
+                  true,
+              },
+            },
+          },
+        },
+
+        assignedTo: {
+          select: {
+            id:
+              true,
+
+            username:
+              true,
+
+            firstName:
+              true,
+
+            lastName:
+              true,
+          },
+        },
+      },
+
+      orderBy: {
+        followUpDate:
+          'desc',
+      },
+    });
+  }
+
+  // ==========================================================================
+  // FIND ONE
+  // ==========================================================================
+
+  async findOne(
+    id: string,
+    user: AuthenticatedUser,
+  ) {
+    const followUp =
+      await this.prisma.followUp.findFirst({ where: { id, deletedAt: null },
+
+        include: {
+          product:
+            true,
+
+          activity:
+            true,
+
+          branch: {
+            include: {
+              district: {
+                include: {
+                  region:
+                    true,
+                },
+              },
+            },
+          },
+
+          createdBy: {
+            select: {
+              id:
+                true,
+
+              username:
+                true,
+
+              firstName:
+                true,
+
+              lastName:
+                true,
+            },
+          },
+
+          assignedTo: {
+            select: {
+              id:
+                true,
+
+              username:
+                true,
+
+              firstName:
+                true,
+
+              lastName:
+                true,
+            },
+          },
+
+          history: {
+            include: {
+              changedBy: {
+                select: {
+                  id:
+                    true,
+
+                  username:
+                    true,
+
+                  firstName:
+                    true,
+
+                  lastName:
+                    true,
+                },
+              },
+            },
+
+            orderBy: {
+              createdAt:
+                'desc',
+            },
+          },
+        },
+      });
+
+    if (!followUp) {
+      throw new NotFoundException(
+        'Follow-up not found',
+      );
+    }
+
+    if (
+      followUp.assignedToUserId ===
+        user.id ||
+      followUp.createdByUserId ===
+        user.id ||
+      this.scopeService.isGlobal(
+        user,
+      )
+    ) {
+      return followUp;
+    }
+
+    await this.scopeService.assertBranchAccess(
+      user,
+      followUp.branchId,
+    );
+
+    return followUp;
+  }
+
+  // ==========================================================================
+  // UPDATE
+  // ==========================================================================
+
+  async update(
+    id: string,
+    dto: UpdateFollowUpDto,
+    user: AuthenticatedUser,
+  ) {
+    const existing =
+      await this.findOne(
+        id,
+        user,
+      );
+
+    if (!existing.isEnabled || existing.deletedAt) {
+      throw new BadRequestException(
+        'Disabled or deleted follow-ups cannot be edited',
+      );
+    }
+
+    if (Object.prototype.hasOwnProperty.call(dto, 'assignedToUserId')) {
+      throw new BadRequestException(
+        'Use the dedicated reassignment endpoint to change assigned staff',
+      );
+    }
+
+    return this.prisma.followUp.update({
+      where: {
+        id,
+        deletedAt: null,
+        isEnabled: true,
+      },
+
+      data: {
+productId:
+          dto.productId,
+
+        customerReference:
+          dto.customerReference?.trim(),
+
+        customerNameMasked:
+          dto.customerNameMasked?.trim(),
+
+        contactReference:
+          dto.contactReference?.trim(),
+
+        reason:
+          dto.reason?.trim(),
+
+        priority:
+          dto.priority,
+
+        followUpDate:
+          dto.followUpDate
+            ? new Date(
+                dto.followUpDate,
+              )
+            : undefined,
+
+        nextFollowUpDate:
+          dto.nextFollowUpDate
+            ? new Date(
+                dto.nextFollowUpDate,
+              )
+            : undefined,
+
+        remarks:
+          dto.remarks?.trim(),
+
+        outcome:
+          dto.outcome?.trim(),
+      },
+    });
+  }
+
+  // ==========================================================================
+  // UPDATE STATUS + HISTORY
+  // ==========================================================================
+
+  async updateStatus(
+    id: string,
+    dto: UpdateFollowUpStatusDto,
+    user: AuthenticatedUser,
+  ) {
+    const followUp =
+      await this.findOne(
+        id,
+        user,
+      );
+
+    if (!followUp.isEnabled || followUp.deletedAt) {
+      throw new BadRequestException(
+        'Disabled or deleted follow-ups cannot change status',
+      );
+    }
+
+    if (
+      followUp.assignedToUserId !==
+        user.id &&
+      !this.scopeService.isGlobal(
+        user,
+      )
+    ) {
+      await this.scopeService.assertBranchAccess(
+        user,
+        followUp.branchId,
+      );
+    }
+
+    if (
+      dto.status ===
+        'RESCHEDULED' &&
+      !dto.nextFollowUpDate
+    ) {
+      throw new BadRequestException(
+        'nextFollowUpDate is required when status is RESCHEDULED',
+      );
+    }
+
+    const completedStatuses = [
+      'CONVERTED',
+      'NOT_INTERESTED',
+      'UNREACHABLE',
+      'CLOSED',
+    ];
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const updated =
+          await tx.followUp.update({
+            where: {
+              id,
+              deletedAt: null,
+              isEnabled: true,
+              status: followUp.status,
+            },
+            data: {
+              status:
+                dto.status,
+
+              outcome:
+                dto.outcome?.trim(),
+
+              nextFollowUpDate:
+                dto.nextFollowUpDate
+                  ? new Date(
+                      dto.nextFollowUpDate,
+                    )
+                  : undefined,
+
+              completedAt:
+                completedStatuses.includes(
+                  dto.status,
+                )
+                  ? new Date()
+                  : null,
+            },
+          });
+
+        await tx.followUpHistory.create({
+          data: {
+            followUpId:
+              id,
+
+            changedByUserId:
+              user.id,
+
+            previousStatus:
+              followUp.status,
+
+            newStatus:
+              dto.status,
+
+            note:
+              dto.note?.trim(),
+          },
+        });
+
+        return updated;
+      },
+    );
+  }
+
+  // ==========================================================================
+  // ==========================================================================
+  // FOLLOW-UP LIFECYCLE
+  // ==========================================================================
+
+  private async assertLifecycleAccess(
+    id: string,
+    user: AuthenticatedUser,
+    permission: 'followup.manage' | 'followup.delete' | 'followup.reassign',
+  ) {
+    const followUp = await this.prisma.followUp.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        branchId: true,
+        isEnabled: true,
+      },
+    });
+
+    if (!followUp) {
+      throw new NotFoundException('Follow-up not found');
+    }
+
+    const now = new Date();
+
+    const assignments = await this.prisma.userRole.findMany({
+      where: {
+        userId: user.id,
+        OR: [
+          { validFrom: null },
+          { validFrom: { lte: now } },
+        ],
+        AND: [
+          {
+            OR: [
+              { validTo: null },
+              { validTo: { gte: now } },
+            ],
+          },
+        ],
+        role: {
+          status: 'ACTIVE',
+          rolePermissions: {
+            some: {
+              permission: {
+                code: permission,
+                status: 'ACTIVE',
+              },
+            },
+          },
+        },
+      },
+      select: {
+        scopeType: true,
+        regionId: true,
+        districtId: true,
+        branchId: true,
+        role: {
+          select: {
+            code: true,
+          },
+        },
+      },
+    });
+
+    if (assignments.length === 0) {
+      throw new ForbiddenException(
+        'You do not have permission to manage this follow-up',
+      );
+    }
+
+    const branch = await this.prisma.branch.findFirst({
+      where: {
+        id: followUp.branchId,
+        deletedAt: null,
+        district: {
+          deletedAt: null,
+          region: {
+            deletedAt: null,
+          },
+        },
+      },
+      select: {
+        id: true,
+        districtId: true,
+        district: {
+          select: {
+            regionId: true,
+          },
+        },
+      },
+    });
+
+    if (!branch) {
+      throw new ForbiddenException(
+        'Follow-up branch is not accessible',
+      );
+    }
+
+    const allowed = assignments.some((assignment) => {
+      switch (assignment.scopeType) {
+        case 'GLOBAL':
+          return (
+            assignment.role.code === 'SUPER_ADMIN' ||
+            assignment.role.code === 'SYSTEM_ADMIN'
+          );
+
+        case 'REGION':
+          return (
+            assignment.regionId !== null &&
+            assignment.regionId === branch.district.regionId
+          );
+
+        case 'DISTRICT':
+          return (
+            assignment.districtId !== null &&
+            assignment.districtId === branch.districtId
+          );
+
+        case 'BRANCH':
+          return (
+            assignment.branchId !== null &&
+            assignment.branchId === branch.id
+          );
+
+        default:
+          return false;
+      }
+    });
+
+    if (!allowed) {
+      throw new ForbiddenException(
+        'You do not have lifecycle permission for this branch',
+      );
+    }
+
+    return followUp;
+  }
+
+  async enable(
+    id: string,
+    user: AuthenticatedUser,
+  ) {
+    const existing = await this.assertLifecycleAccess(
+      id,
+      user,
+      'followup.manage',
+    );
+
+    if (existing.isEnabled) {
+      throw new BadRequestException(
+        'Follow-up is already enabled',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.followUp.updateMany({
+        where: {
+          id,
+          deletedAt: null,
+          isEnabled: false,
+        },
+        data: {
+          isEnabled: true,
+          disabledAt: null,
+          disabledByUserId: null,
+        },
+      });
+
+      if (result.count !== 1) {
+        throw new BadRequestException(
+          'Follow-up state changed. Refresh and try again.',
+        );
+      }
+
+      const updated = await tx.followUp.findUniqueOrThrow({
+        where: { id },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'UPDATE',
+          module: 'FOLLOW_UPS',
+          entityType: 'FollowUp',
+          entityId: id,
+          description: 'Follow-up enabled',
+          oldValue: {
+            isEnabled: existing.isEnabled,
+          },
+          newValue: {
+            isEnabled: true,
+          },
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async disable(
+    id: string,
+    user: AuthenticatedUser,
+  ) {
+    const existing = await this.assertLifecycleAccess(
+      id,
+      user,
+      'followup.manage',
+    );
+
+    if (!existing.isEnabled) {
+      throw new BadRequestException(
+        'Follow-up is already disabled',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.followUp.updateMany({
+        where: {
+          id,
+          deletedAt: null,
+          isEnabled: true,
+        },
+        data: {
+          isEnabled: false,
+          disabledAt: new Date(),
+          disabledByUserId: user.id,
+        },
+      });
+
+      if (result.count !== 1) {
+        throw new BadRequestException(
+          'Follow-up state changed. Refresh and try again.',
+        );
+      }
+
+      const updated = await tx.followUp.findUniqueOrThrow({
+        where: { id },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'UPDATE',
+          module: 'FOLLOW_UPS',
+          entityType: 'FollowUp',
+          entityId: id,
+          description: 'Follow-up disabled',
+          oldValue: {
+            isEnabled: existing.isEnabled,
+          },
+          newValue: {
+            isEnabled: false,
+          },
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async softDelete(
+    id: string,
+    user: AuthenticatedUser,
+  ) {
+    const existing = await this.assertLifecycleAccess(
+      id,
+      user,
+      'followup.delete',
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.followUp.updateMany({
+        where: {
+          id,
+          deletedAt: null,
+        },
+        data: {
+          deletedAt: new Date(),
+          deletedByUserId: user.id,
+        },
+      });
+
+      if (result.count !== 1) {
+        throw new BadRequestException(
+          'Follow-up was already deleted or changed.',
+        );
+      }
+
+      const updated = await tx.followUp.findUniqueOrThrow({
+        where: { id },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'DELETE',
+          module: 'FOLLOW_UPS',
+          entityType: 'FollowUp',
+          entityId: id,
+          description: 'Follow-up soft-deleted',
+          oldValue: {
+            deletedAt: null,
+            isEnabled: existing.isEnabled,
+          },
+          newValue: {
+            deletedAt: updated.deletedAt?.toISOString(),
+            isEnabled: updated.isEnabled,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Follow-up deleted successfully',
+      };
+    });
+  }
+  // SUMMARY
+  // ==========================================================================
+
+  async summary(
+    user: AuthenticatedUser,
+  ) {
+    const all = (await this.findAllScoped(user)).filter(
+      (item) => item.isEnabled,
+    );
+
+// Today's Ethiopia-local calendar date, represented
+// as UTC midnight for comparison with MySQL DATE columns.
+const now = new Date();
+
+const ethiopiaToday = new Date(
+  now.getTime() + 3 * 60 * 60 * 1000,
+)
+  .toISOString()
+  .slice(0, 10);
+
+const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
+
+    return {
+      total:
+        all.length,
+
+      open:
+        all.filter(
+          (item) =>
+            item.status ===
+            'OPEN',
+        ).length,
+
+      contacted:
+        all.filter(
+          (item) =>
+            item.status ===
+            'CONTACTED',
+        ).length,
+
+      rescheduled:
+        all.filter(
+          (item) =>
+            item.status ===
+            'RESCHEDULED',
+        ).length,
+
+      converted:
+        all.filter(
+          (item) =>
+            item.status ===
+            'CONVERTED',
+        ).length,
+
+      overdue:
+        all.filter(
+          (item) =>
+            item.followUpDate <
+              today &&
+            [
+              'OPEN',
+              'CONTACTED',
+              'RESCHEDULED',
+            ].includes(
+              item.status,
+            ),
+        ).length,
+    };
+  }
+}

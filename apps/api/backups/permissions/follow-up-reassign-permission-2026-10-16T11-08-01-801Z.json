@@ -1,0 +1,11 @@
+{
+  "createdAt": "2026-10-16T11:08:01.802Z",
+  "permission": null,
+  "approvedRoles": [
+    "SUPER_ADMIN",
+    "SYSTEM_ADMIN",
+    "REGIONAL_MANAGER",
+    "DISTRICT_MANAGER",
+    "BRANCH_MANAGER"
+  ]
+}

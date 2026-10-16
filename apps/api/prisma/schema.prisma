@@ -756,6 +756,14 @@ model FollowUp {
 
   completedAt DateTime?
 
+  isEnabled Boolean @default(true)
+
+  disabledAt       DateTime?
+  disabledByUserId String?   @db.Char(36)
+
+  deletedAt       DateTime?
+  deletedByUserId String?   @db.Char(36)
+
   outcome String? @db.Text
 
   remarks String? @db.Text
@@ -781,6 +789,8 @@ model FollowUp {
   @@index([assignedToUserId])
   @@index([followUpDate])
   @@index([status])
+  @@index([isEnabled])
+  @@index([deletedAt])
   @@index([priority])
   @@map("follow_ups")
 }

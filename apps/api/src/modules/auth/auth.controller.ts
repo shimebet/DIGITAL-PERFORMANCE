@@ -37,6 +37,12 @@ import {
 import type {
   AuthenticatedUser,
 } from './interfaces/authenticated-user.interface.js';
+import {
+  Throttle,
+} from '@nestjs/throttler';
+
+
+
 
 @Controller('auth')
 export class AuthController {
@@ -50,8 +56,14 @@ export class AuthController {
   // ==========================================================================
 
   @Public()
-  @Post('login')
-  login(
+@Throttle({
+  default: {
+    limit: 5,
+    ttl: 60_000,
+  },
+})
+@Post('login')
+login(
     @Body()
     dto: LoginDto,
   ) {
@@ -65,9 +77,15 @@ export class AuthController {
   // REFRESH TOKEN
   // ==========================================================================
 
-  @Public()
-  @Post('refresh')
-  refresh(
+@Public()
+@Throttle({
+  default: {
+    limit: 20,
+    ttl: 60_000,
+  },
+})
+@Post('refresh')
+refresh(
     @Body()
     dto: RefreshTokenDto,
   ) {

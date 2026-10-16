@@ -3,6 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -15,6 +16,9 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   @MaxLength(191)
+  @Matches(/\S/, {
+    message: 'Product name cannot be empty or whitespace only',
+  })
   name?: string;
 
   @IsOptional()

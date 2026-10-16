@@ -1,0 +1,254 @@
+
+import {
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { ActivitiesService } from './activities.service.js';
+import { PrismaService } from '../../database/prisma/prisma.service.js';
+
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
+
+describe('ActivitiesService - submission protection', () => {
+  let service: ActivitiesService;
+
+  const activityId = 'activity-1';
+  const submissionId = 'submission-1';
+
+  const user = {
+    id: 'staff-1',
+    roles: ['DIGITAL_RESKILLED_STAFF'],
+    scopes: [],
+  } as unknown as AuthenticatedUser;
+
+  const updateDto = {
+    customerVisits: 65,
+  };
+
+  const prisma = {
+    $queryRaw: vi.fn(),
+
+    activity: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
+
+    dailySubmission: {
+      findUnique: vi.fn(),
+    },
+
+    activityProduct: {
+      deleteMany: vi.fn(),
+      create: vi.fn(),
+    },
+
+    $transaction: vi.fn(),
+  };
+
+  function makeActivity(
+    status: string | null,
+  ) {
+    return {
+      id: activityId,
+      staffId: user.id,
+      branchId: 'branch-1',
+      activityDate: new Date('2026-10-08'),
+
+      customerVisits: 60,
+      phoneCalls: 20,
+      customersContacted: 50,
+      customersEducated: 40,
+      activations: 6,
+      reactivations: 2,
+      transactions: 4,
+
+      remarks: null,
+      challenges: null,
+
+      submissionId: status === null ? null : submissionId,
+
+      branch: {
+        districtId: 'district-1',
+        district: {
+          regionId: 'region-1',
+        },
+      },
+
+      submission:
+        status === null
+          ? null
+          : {
+              id: submissionId,
+              status,
+            },
+
+      products: [],
+    };
+  }
+
+  function mockActivity(
+    initialStatus: string | null,
+    lockedStatus: string | null = initialStatus,
+  ) {
+    // Initial read performed by findOne().
+    prisma.activity.findUnique
+      .mockResolvedValueOnce(makeActivity(initialStatus))
+      // Fresh activity read inside the locked transaction.
+      .mockResolvedValueOnce(makeActivity(lockedStatus))
+      // Final read after updating.
+      .mockResolvedValue(makeActivity(lockedStatus));
+
+    if (lockedStatus !== null) {
+      prisma.dailySubmission.findUnique.mockResolvedValue({
+        id: submissionId,
+        status: lockedStatus,
+      });
+    } else {
+      prisma.dailySubmission.findUnique.mockResolvedValue(null);
+    }
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+
+    // Simulate the staff row being locked successfully.
+    prisma.$queryRaw.mockResolvedValue([
+      { id: user.id },
+    ]);
+
+    // Execute the transaction callback instead of returning a
+    // predefined value. This exercises the actual protection logic.
+    prisma.$transaction.mockImplementation(
+      async (
+        callback: (tx: typeof prisma) => Promise<unknown>,
+      ) => callback(prisma),
+    );
+
+    prisma.activity.update.mockResolvedValue({
+      id: activityId,
+      customerVisits: 65,
+    });
+
+    prisma.activityProduct.deleteMany.mockResolvedValue({
+      count: 0,
+    });
+
+    service = new ActivitiesService(
+      prisma as unknown as PrismaService,
+    );
+  });
+
+  it.each([
+    'SUBMITTED',
+    'RESUBMITTED',
+    'REVIEWED',
+    'APPROVED',
+  ])(
+    'rejects updates when submission is %s',
+    async (status) => {
+      mockActivity(status);
+
+      await expect(
+        service.update(activityId, updateDto, user),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prisma.$transaction).toHaveBeenCalledOnce();
+      expect(prisma.$queryRaw).toHaveBeenCalledOnce();
+
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+      expect(prisma.activityProduct.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.activityProduct.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    'DRAFT',
+    'RETURNED_FOR_CORRECTION',
+  ])(
+    'allows updates when submission is %s',
+    async (status) => {
+      mockActivity(status);
+
+      await service.update(activityId, updateDto, user);
+
+      expect(prisma.$transaction).toHaveBeenCalledOnce();
+      expect(prisma.$queryRaw).toHaveBeenCalledOnce();
+
+      expect(prisma.activity.update).toHaveBeenCalledOnce();
+
+      expect(prisma.activity.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: activityId },
+          data: expect.objectContaining({
+            customerVisits: 65,
+          }),
+        }),
+      );
+    },
+  );
+
+  it('allows editing an activity without a submission', async () => {
+    mockActivity(null);
+
+    await service.update(activityId, updateDto, user);
+
+    expect(prisma.activity.update).toHaveBeenCalledOnce();
+    expect(prisma.activityProduct.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects an activity approved after the initial lookup', async () => {
+    // Initial read says DRAFT; locked read says APPROVED.
+    mockActivity('DRAFT', 'APPROVED');
+
+    await expect(
+      service.update(activityId, updateDto, user),
+    ).rejects.toThrow(ForbiddenException);
+
+    expect(prisma.activity.update).not.toHaveBeenCalled();
+    expect(prisma.activityProduct.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.activityProduct.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects editing an activity belonging to another staff member', async () => {
+    const otherStaffActivity = {
+      ...makeActivity('DRAFT'),
+      staffId: 'another-staff',
+    };
+
+    prisma.activity.findUnique.mockResolvedValue(
+      otherStaffActivity,
+    );
+
+    await expect(
+      service.update(activityId, updateDto, user),
+    ).rejects.toThrow(ForbiddenException);
+
+    expect(prisma.activity.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects editing an activity that no longer exists', async () => {
+    prisma.activity.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.update(activityId, updateDto, user),
+    ).rejects.toThrow(NotFoundException);
+
+    expect(prisma.activity.update).not.toHaveBeenCalled();
+  });
+
+  it('acquires the staff lock before updating the activity', async () => {
+    mockActivity('DRAFT');
+
+    await service.update(activityId, updateDto, user);
+
+    expect(prisma.$queryRaw).toHaveBeenCalledOnce();
+    expect(prisma.activity.update).toHaveBeenCalledOnce();
+
+    expect(
+      prisma.$queryRaw.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      prisma.activity.update.mock.invocationCallOrder[0],
+    );
+  });
+});

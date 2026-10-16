@@ -1,0 +1,207 @@
+
+$ErrorActionPreference = 'Stop'
+
+$file = 'D:\DIGITAL-PERFORMANCE\apps\api\src\modules\follow-ups\follow-ups.service.ts'
+
+$content = [System.IO.File]::ReadAllText($file)
+
+if ($content.Contains('async softDelete(')) {
+  throw 'Lifecycle methods already exist. No changes saved.'
+}
+
+$marker = '  // ==========================================================================' +
+  "`n" +
+  '  // SUMMARY'
+
+if (-not $content.Contains($marker)) {
+  throw 'SUMMARY insertion marker not found. No changes saved.'
+}
+
+$addition = @'
+  // ==========================================================================
+  // FOLLOW-UP LIFECYCLE
+  // ==========================================================================
+
+  private async assertLifecycleAccess(
+    id: string,
+    user: AuthenticatedUser,
+    permission: 'followup.manage' | 'followup.delete',
+  ) {
+    if (!user.permissions.includes(permission)) {
+      throw new ForbiddenException(
+        'You do not have permission to manage this follow-up',
+      );
+    }
+
+    const followUp = await this.prisma.followUp.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+      },
+    });
+
+    if (!followUp) {
+      throw new NotFoundException('Follow-up not found');
+    }
+
+    await this.scopeService.assertBranchAccess(
+      user,
+      followUp.branchId,
+    );
+
+    return followUp;
+  }
+
+  async enable(
+    id: string,
+    user: AuthenticatedUser,
+  ) {
+    const existing = await this.assertLifecycleAccess(
+      id,
+      user,
+      'followup.manage',
+    );
+
+    if (existing.isEnabled) {
+      throw new BadRequestException(
+        'Follow-up is already enabled',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.followUp.update({
+        where: { id },
+        data: {
+          isEnabled: true,
+          disabledAt: null,
+          disabledByUserId: null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'UPDATE',
+          module: 'FOLLOW_UPS',
+          entityType: 'FollowUp',
+          entityId: id,
+          description: 'Follow-up enabled',
+          oldValue: {
+            isEnabled: existing.isEnabled,
+          },
+          newValue: {
+            isEnabled: true,
+          },
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async disable(
+    id: string,
+    user: AuthenticatedUser,
+  ) {
+    const existing = await this.assertLifecycleAccess(
+      id,
+      user,
+      'followup.manage',
+    );
+
+    if (!existing.isEnabled) {
+      throw new BadRequestException(
+        'Follow-up is already disabled',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.followUp.update({
+        where: { id },
+        data: {
+          isEnabled: false,
+          disabledAt: new Date(),
+          disabledByUserId: user.id,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'UPDATE',
+          module: 'FOLLOW_UPS',
+          entityType: 'FollowUp',
+          entityId: id,
+          description: 'Follow-up disabled',
+          oldValue: {
+            isEnabled: existing.isEnabled,
+          },
+          newValue: {
+            isEnabled: false,
+          },
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async softDelete(
+    id: string,
+    user: AuthenticatedUser,
+  ) {
+    const existing = await this.assertLifecycleAccess(
+      id,
+      user,
+      'followup.delete',
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.followUp.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+          deletedByUserId: user.id,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'DELETE',
+          module: 'FOLLOW_UPS',
+          entityType: 'FollowUp',
+          entityId: id,
+          description: 'Follow-up soft-deleted',
+          oldValue: {
+            deletedAt: null,
+            isEnabled: existing.isEnabled,
+          },
+          newValue: {
+            deletedAt: updated.deletedAt?.toISOString(),
+            isEnabled: updated.isEnabled,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Follow-up deleted successfully',
+      };
+    });
+  }
+
+'@
+
+$index = $content.IndexOf($marker)
+
+$content = $content.Insert($index, $addition)
+
+[System.IO.File]::WriteAllText(
+  $file,
+  $content,
+  (New-Object System.Text.UTF8Encoding($false))
+)
+
+Write-Host 'Lifecycle service methods added.' -ForegroundColor Green
+'@

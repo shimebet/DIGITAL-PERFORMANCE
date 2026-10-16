@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -22,6 +23,10 @@ import {
 import {
   UpdateFollowUpStatusDto,
 } from './dto/update-follow-up-status.dto.js';
+
+import {
+  ReassignFollowUpDto,
+} from './dto/reassign-follow-up.dto.js';
 
 import {
   Permissions,
@@ -131,6 +136,83 @@ export class FollowUpsController {
     return this.followUpsService.update(
       id,
       dto,
+      user,
+    );
+  }
+
+  @Get(':id/reassignment-options')
+  @Permissions('followup.reassign')
+  reassignmentOptions(
+    @Param('id')
+    id: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
+  ) {
+    return this.followUpsService.reassignmentOptions(
+      id,
+      user,
+    );
+  }
+  @Patch(':id/reassign')
+  @Permissions('followup.reassign')
+  reassign(
+    @Param('id')
+    id: string,
+
+    @Body()
+    dto: ReassignFollowUpDto,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
+  ) {
+    return this.followUpsService.reassign(
+      id,
+      dto,
+      user,
+    );
+  }
+  @Patch(':id/enable')
+  @Permissions('followup.manage')
+  enable(
+    @Param('id')
+    id: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
+  ) {
+    return this.followUpsService.enable(
+      id,
+      user,
+    );
+  }
+
+  @Patch(':id/disable')
+  @Permissions('followup.manage')
+  disable(
+    @Param('id')
+    id: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
+  ) {
+    return this.followUpsService.disable(
+      id,
+      user,
+    );
+  }
+
+  @Delete(':id')
+  @Permissions('followup.delete')
+  softDelete(
+    @Param('id')
+    id: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
+  ) {
+    return this.followUpsService.softDelete(
+      id,
       user,
     );
   }

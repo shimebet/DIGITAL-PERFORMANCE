@@ -383,6 +383,32 @@ export class ActivitiesService {
         activations: dto.activations ?? current.activations,
         transactions: dto.transactions ?? current.transactions,
       } as UpdateActivityDto);
+      // Active product validation for activity updates.
+      // Validate before modifying the activity or replacing its products.
+      if (dto.products !== undefined) {
+        const productIds = dto.products.map(
+          (product) => product.productId,
+        );
+
+        const products = await tx.product.findMany({
+          where: {
+            id: {
+              in: productIds,
+            },
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (products.length !== new Set(productIds).size) {
+          throw new BadRequestException(
+            'One or more products are invalid or inactive',
+          );
+        }
+      }
       await tx.activity.update({
         where: { id },
         data: {

@@ -1,0 +1,8 @@
+{
+  "createdAt": "2026-10-16T08:47:17.834Z",
+  "permissions": [
+    "followup.manage",
+    "followup.delete"
+  ],
+  "assignments": []
+}

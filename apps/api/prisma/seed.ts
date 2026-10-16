@@ -519,6 +519,28 @@ async function main() {
       name: 'Update follow-up',
       description: 'Update customer follow-ups.',
     },
+    {
+      code: 'followup.manage',
+      module: 'followup',
+      action: 'manage',
+      name: 'Manage follow-up availability',
+      description: 'Enable or disable customer follow-ups.',
+    },
+
+    {
+      code: 'followup.reassign',
+      module: 'followup',
+      action: 'reassign',
+      name: 'Reassign follow-up',
+      description: 'Transfer customer follow-ups between authorized employees.',
+    },
+    {
+      code: 'followup.delete',
+      module: 'followup',
+      action: 'delete',
+      name: 'Delete follow-up',
+      description: 'Soft-delete customer follow-ups.',
+    },
 
     // ------------------------------------------------------------------------
     // REPORTS

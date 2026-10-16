@@ -13,7 +13,10 @@ import {
 import {
   ScheduleModule,
 } from '@nestjs/schedule';
-
+import {
+  ThrottlerModule,
+  ThrottlerGuard,
+} from '@nestjs/throttler';
 import {
   AppController,
 } from './app.controller.js';
@@ -152,7 +155,16 @@ import {
     // ========================================================================
 
     ScheduleModule.forRoot(),
+// ========================================================================
+// HTTP RATE LIMITING
+// ========================================================================
 
+ThrottlerModule.forRoot([
+  {
+    ttl: 60_000,
+    limit: 100,
+  },
+]),
     // ========================================================================
     // DATABASE
     // ========================================================================
@@ -243,7 +255,10 @@ import {
     //      ↓
     // permission validation
     // ========================================================================
-
+{
+  provide: APP_GUARD,
+  useClass: ThrottlerGuard,
+},
     {
       provide:
         APP_GUARD,

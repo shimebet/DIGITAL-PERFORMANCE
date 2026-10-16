@@ -252,3 +252,160 @@ describe('ActivitiesService - submission protection', () => {
     );
   });
 });
+
+describe('ActivitiesService - product lifecycle', () => {
+  const activityId = 'activity-product-test';
+  const user = {
+    id: 'staff-product-test',
+    roles: ['DIGITAL_RESKILLED_STAFF'],
+    scopes: [],
+  } as unknown as AuthenticatedUser;
+
+  const productEntry = {
+    productId: 'product-active',
+    customersEngaged: 10,
+    activations: 2,
+    reactivations: 1,
+    transactions: 3,
+    failedActivations: 0,
+  };
+
+  const prisma = {
+    $queryRaw: vi.fn(),
+    $transaction: vi.fn(),
+    activity: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
+    activityProduct: {
+      deleteMany: vi.fn(),
+      create: vi.fn(),
+    },
+    product: {
+      findMany: vi.fn(),
+    },
+  };
+
+  let service: ActivitiesService;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+
+    const activity = {
+      id: activityId,
+      staffId: user.id,
+      branchId: 'branch-1',
+      activityDate: new Date('2026-10-08'),
+      customerVisits: 20,
+      phoneCalls: 10,
+      customersContacted: 15,
+      customersEducated: 12,
+      activations: 2,
+      reactivations: 1,
+      transactions: 2,
+      submissionId: null,
+      submission: null,
+      products: [],
+      branch: {
+        districtId: 'district-1',
+        district: {
+          regionId: 'region-1',
+        },
+      },
+    };
+
+    prisma.activity.findUnique.mockResolvedValue(activity);
+    prisma.activity.update.mockResolvedValue(activity);
+    prisma.product.findMany.mockImplementation(
+      async (args: { where: { id: { in: string[] } } }) =>
+        args.where.id.in.includes('product-active')
+          ? [{ id: 'product-active' }]
+          : [],
+    );
+
+    prisma.$queryRaw.mockResolvedValue([{ id: user.id }]);
+
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+        callback(prisma),
+    );
+
+    prisma.activityProduct.deleteMany.mockResolvedValue({
+      count: 0,
+    });
+
+    service = new ActivitiesService(
+      prisma as unknown as PrismaService,
+    );
+  });
+
+  const makeUpdate = (products?: typeof productEntry[]) =>
+    ({
+      customerVisits: 25,
+      ...(products !== undefined ? { products } : {}),
+    }) as Parameters<ActivitiesService['update']>[1];
+
+  it('accepts an active product', async () => {
+    await service.update(
+      activityId,
+      makeUpdate([productEntry]),
+      user,
+    );
+
+    expect(prisma.product.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['product-active'] },
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    expect(prisma.activityProduct.deleteMany).toHaveBeenCalledOnce();
+    expect(prisma.activityProduct.create).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['inactive', 'product-inactive'],
+    ['soft-deleted', 'product-deleted'],
+    ['nonexistent', 'product-missing'],
+  ])('rejects a %s product before changing records', async (_, productId) => {
+    prisma.product.findMany.mockResolvedValue([]);
+
+    await expect(
+      service.update(
+        activityId,
+        makeUpdate([{ ...productEntry, productId }]),
+        user,
+      ),
+    ).rejects.toThrow('One or more products are invalid or inactive');
+
+    expect(prisma.activity.update).not.toHaveBeenCalled();
+    expect(prisma.activityProduct.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.activityProduct.create).not.toHaveBeenCalled();
+  });
+
+  it('allows updates without product changes', async () => {
+    await service.update(
+      activityId,
+      makeUpdate(),
+      user,
+    );
+
+    expect(prisma.product.findMany).not.toHaveBeenCalled();
+    expect(prisma.activity.update).toHaveBeenCalledOnce();
+    expect(prisma.activityProduct.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('allows an empty product array to clear associations', async () => {
+    await service.update(
+      activityId,
+      makeUpdate([]),
+      user,
+    );
+
+    expect(prisma.product.findMany).toHaveBeenCalledOnce();
+    expect(prisma.activityProduct.deleteMany).toHaveBeenCalledOnce();
+    expect(prisma.activityProduct.create).not.toHaveBeenCalled();
+  });
+});
