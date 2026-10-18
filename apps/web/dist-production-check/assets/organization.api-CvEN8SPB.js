@@ -1,0 +1,1 @@
+import{n as e,t}from"./api-client-C-4hFKbX.js";async function n(){return(await t.get(e.regions)).data}async function r(n){return(await t.get(e.districts,{params:n?{regionId:n}:void 0})).data}async function i(n){return(await t.get(e.branches,{params:n?{districtId:n}:void 0})).data}export{r as n,n as r,i as t};

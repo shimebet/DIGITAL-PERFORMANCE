@@ -1,0 +1,1 @@
+import{st as e}from"./Typography-Gh_RsoOB.js";import{P as t}from"./api-client-C-4hFKbX.js";var n=e(),r=t((0,n.jsx)(`path`,{d:`M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z`}),`AddOutlined`);export{r as t};

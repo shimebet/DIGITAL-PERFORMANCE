@@ -1,0 +1,1 @@
+import{ft as e}from"./jsx-dev-runtime-DxXSXXSq.js";import{R as t}from"./api-client-BctTNSEH.js";var n=e(),r=t((0,n.jsx)(`path`,{d:`m4.01 6.03 7.51 3.22-7.52-1zm7.5 8.72L4 17.97v-2.22zM2.01 3 2 10l15 2-15 2 .01 7L23 12z`}),`SendOutlined`);export{r as t};
