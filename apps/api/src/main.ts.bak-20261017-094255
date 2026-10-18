@@ -43,17 +43,23 @@ async function bootstrap() {
     );
   }
 
-  const app = await NestFactory.create(
-    AppModule,
-  );
+const app = await NestFactory.create(
+  AppModule,
+);
 
-  // ============================================================
-  // SECURITY HEADERS
-  // ============================================================
+// ============================================================
+// GRACEFUL SHUTDOWN
+// ============================================================
 
-  app.use(helmet());
+app.enableShutdownHooks();
 
-  app.use(cookieParser());
+// ============================================================
+// SECURITY HEADERS
+// ============================================================
+
+app.use(helmet());
+
+app.use(cookieParser());
 
   // ============================================================
   // CORS

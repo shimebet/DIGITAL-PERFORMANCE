@@ -1,4 +1,4 @@
-import {
+﻿import {
   Logger,
   ValidationPipe,
 } from '@nestjs/common';
@@ -20,6 +20,7 @@ import {
 } from './app.module.js';
 
 async function bootstrap() {
+  process.loadEnvFile('.env');
   const logger = new Logger('Bootstrap');
 
   const isProduction =
@@ -190,3 +191,4 @@ void bootstrap().catch((error: unknown) => {
 
   process.exitCode = 1;
 });
+
