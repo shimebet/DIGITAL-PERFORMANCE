@@ -1,4 +1,4 @@
-﻿
+
 import {
   ForbiddenException,
 } from '@nestjs/common';
@@ -21,6 +21,7 @@ import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.in
 const adminUser = {
   id: 'admin-user-1',
   username: 'admin',
+  mustChangePassword: false,
   firstName: 'System',
   lastName: 'Administrator',
   roles: ['SUPER_ADMIN'],
@@ -79,6 +80,7 @@ describe('UsersController', () => {
     const expected = {
       id: 'user-1',
       username: 'testuser',
+      mustChangePassword: false,
       firstName: 'Test',
       lastName: 'User',
     };

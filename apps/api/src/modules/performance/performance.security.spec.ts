@@ -9,6 +9,9 @@ describe('PerformanceService management security', () => {
   let service: PerformanceService;
 
   const prismaMock = {
+    activity: {
+      findMany: vi.fn(),
+    },
     activityProduct: {
       findMany: vi.fn(),
     },
@@ -104,4 +107,88 @@ describe('PerformanceService management security', () => {
 
     expect(prismaMock.activityProduct.findMany).not.toHaveBeenCalled();
   });
+  it('preserves district and region filters in performance summary', async () => {
+  const query = {
+    districtId: 'district-1',
+    regionId: 'region-1',
+    startDate: '2026-10-01',
+    endDate: '2026-10-15',
+  } as Parameters<PerformanceService['summary']>[0];
+
+  prismaMock.activity.findMany.mockResolvedValue([]);
+
+  try {
+    await service.summary(query, manager);
+  } catch {
+    // The summary may need additional Prisma mocks after
+    // findMany. We are inspecting the first query only.
+  }
+
+  expect(prismaMock.activity.findMany).toHaveBeenCalledTimes(1);
+
+  const where = prismaMock.activity.findMany.mock.calls[0][0].where;
+
+  // The district restriction must not be overwritten
+  // when regionId is also supplied.
+  expect(JSON.stringify(where)).toContain(
+    '"districtId":"district-1"',
+  );
+
+  expect(JSON.stringify(where)).toContain(
+    '"regionId":"region-1"',
+  );
+
+  // The authenticated user's branch authorization
+  // must remain part of the query.
+  expect(JSON.stringify(where)).toContain(
+    '"branch-1"',
+  );
+});
+
+
+it('preserves district and region filters in product comparison', async () => {
+  const query = {
+    districtId: 'district-1',
+    regionId: 'region-1',
+    startDate: '2026-10-01',
+    endDate: '2026-10-15',
+  } as Parameters<PerformanceService['productComparison']>[0];
+
+  prismaMock.activityProduct.findMany.mockResolvedValue([]);
+
+  await service.productComparison(query, manager);
+
+  expect(prismaMock.activityProduct.findMany).toHaveBeenCalledTimes(1);
+
+  const where =
+    prismaMock.activityProduct.findMany.mock.calls[0][0].where.activity;
+
+  expect(JSON.stringify(where)).toContain('"districtId":"district-1"');
+  expect(JSON.stringify(where)).toContain('"regionId":"region-1"');
+  expect(JSON.stringify(where)).toContain('"branch-1"');
+});
+
+
+it('preserves district and region filters in daily trend', async () => {
+  const query = {
+    districtId: 'district-1',
+    regionId: 'region-1',
+    startDate: '2026-10-01',
+    endDate: '2026-10-15',
+  } as Parameters<PerformanceService['dailyTrend']>[0];
+
+  prismaMock.activity.findMany.mockResolvedValue([]);
+
+  await service.dailyTrend(query, manager);
+
+  expect(prismaMock.activity.findMany).toHaveBeenCalledTimes(1);
+
+  const where = prismaMock.activity.findMany.mock.calls[0][0].where;
+
+  expect(JSON.stringify(where)).toContain('"districtId":"district-1"');
+  expect(JSON.stringify(where)).toContain('"regionId":"region-1"');
+  expect(JSON.stringify(where)).toContain('"branch-1"');
+});
+
+
 });

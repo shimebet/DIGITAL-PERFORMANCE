@@ -22,6 +22,7 @@ import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.in
 const adminUser: AuthenticatedUser = {
   id: 'admin-user-1',
   username: 'admin',
+  mustChangePassword: false,
   firstName: 'System',
   lastName: 'Administrator',
   roles: ['SUPER_ADMIN'],
@@ -48,6 +49,7 @@ const adminUser: AuthenticatedUser = {
 const branchStaff: AuthenticatedUser = {
   id: 'branch-staff-1',
   username: 'branch.staff',
+  mustChangePassword: false,
   firstName: 'Branch',
   lastName: 'Staff',
   roles: ['DIGITAL_RESKILLED_STAFF'],

@@ -1,3 +1,4 @@
+﻿import { isRoleAssignmentCurrentlyValid } from './utils/role-assignment-validity.js';
 import {
   BadRequestException,
   ConflictException,
@@ -158,7 +159,7 @@ export class AuthService {
     user: NonNullable<Awaited<ReturnType<UsersService['findByUsername']>>>,
   ) {
     const activeAssignments = user.roles.filter(
-      (entry) => entry.role.status === 'ACTIVE',
+      (entry) => (entry.role.status === 'ACTIVE' && isRoleAssignmentCurrentlyValid(entry)),
     );
     const roleAssignments = activeAssignments.map((entry) => ({
       roleCode: entry.role.code,
@@ -166,6 +167,10 @@ export class AuthService {
       regionId: entry.regionId,
       districtId: entry.districtId,
       branchId: entry.branchId,
+
+      permissions: entry.role.rolePermissions
+        .filter((rp) => rp.permission.status === 'ACTIVE')
+        .map((rp) => rp.permission.code),
     }));
     const roles = [...new Set(roleAssignments.map((entry) => entry.roleCode))];
     const permissions = [
@@ -827,7 +832,7 @@ const {
       throw new UnauthorizedException('User account is not active');
     }
     const activeAssignments = user.roles.filter(
-      (assignment) => assignment.role.status === 'ACTIVE',
+      (assignment) => (assignment.role.status === 'ACTIVE' && isRoleAssignmentCurrentlyValid(assignment)),
     );
     const roleAssignments = activeAssignments.map((assignment) => ({
       roleCode: assignment.role.code,
@@ -835,6 +840,10 @@ const {
       regionId: assignment.regionId,
       districtId: assignment.districtId,
       branchId: assignment.branchId,
+
+      permissions: assignment.role.rolePermissions
+        .filter((rp) => rp.permission.status === 'ACTIVE')
+        .map((rp) => rp.permission.code),
     }));
     const roles = [...new Set(roleAssignments.map((assignment) => assignment.roleCode))];
     const permissions = [
@@ -1026,3 +1035,4 @@ const {
     );
   }
 }
+

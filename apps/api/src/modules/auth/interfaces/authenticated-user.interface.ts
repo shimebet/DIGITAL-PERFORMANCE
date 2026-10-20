@@ -1,4 +1,4 @@
-
+﻿
 export type AuthenticatedScopeType =
   | 'GLOBAL'
   | 'REGION'
@@ -19,6 +19,13 @@ export interface AuthenticatedUserScope {
 export interface AuthenticatedUserRoleAssignment
   extends AuthenticatedUserScope {
   roleCode: string;
+
+  /**
+   * Active permissions granted by this specific role.
+   * Authorization must use permissions and scope
+   * from the same assignment.
+   */
+  permissions?: string[];
 }
 
 export interface AuthenticatedUser {
@@ -35,6 +42,7 @@ export interface AuthenticatedUser {
   permissions: string[];
 
   scopes: AuthenticatedUserScope[];
+  mustChangePassword: boolean;
 
   /**
    * Keeps each role associated with its actual scope.
@@ -47,3 +55,5 @@ export interface AuthenticatedUser {
    */
   roleAssignments?: AuthenticatedUserRoleAssignment[];
 }
+
+

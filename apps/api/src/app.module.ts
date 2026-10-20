@@ -130,6 +130,7 @@ import {
 import {
   ReportsModule,
 } from './modules/reports/reports.module.js';
+import { PasswordChangeGuard } from './modules/auth/guards/password-change.guard.js';
 
 @Module({
   imports: [
@@ -243,7 +244,10 @@ ThrottlerModule.forRoot([
       useClass:
         JwtAuthGuard,
     },
-
+{
+  provide: APP_GUARD,
+  useClass: PasswordChangeGuard,
+},
     // ========================================================================
     // GLOBAL PERMISSION GUARD
     //

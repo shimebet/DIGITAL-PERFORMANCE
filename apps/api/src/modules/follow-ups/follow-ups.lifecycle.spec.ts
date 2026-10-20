@@ -16,6 +16,7 @@ describe('FollowUpsService lifecycle authorization', () => {
   const user = {
     id: 'manager-1',
     username: 'manager',
+    mustChangePassword: false,
     firstName: 'Test',
     lastName: 'Manager',
     roles: [],

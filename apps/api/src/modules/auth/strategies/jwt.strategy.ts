@@ -1,3 +1,4 @@
+﻿import { isRoleAssignmentCurrentlyValid } from '../utils/role-assignment-validity.js';
 
 import {
   Injectable,
@@ -82,7 +83,7 @@ export class JwtStrategy extends PassportStrategy(
     }
 
     const activeAssignments = user.roles.filter(
-      (item) => item.role.status === 'ACTIVE',
+      (item) => (item.role.status === 'ACTIVE' && isRoleAssignmentCurrentlyValid(item)),
     );
 
     const roleAssignments:
@@ -97,6 +98,10 @@ export class JwtStrategy extends PassportStrategy(
         districtId: item.districtId,
 
         branchId: item.branchId,
+
+        permissions: item.role.rolePermissions
+          .filter((rp) => rp.permission.status === 'ACTIVE')
+          .map((rp) => rp.permission.code),
       }));
 
     const roles = [
@@ -138,24 +143,28 @@ export class JwtStrategy extends PassportStrategy(
       }),
     );
 
-    const authenticatedUser: AuthenticatedUser = {
-      id: user.id,
+ const authenticatedUser: AuthenticatedUser = {
+  id: user.id,
 
-      username: user.username,
+  username: user.username,
 
-      firstName: user.firstName,
+  firstName: user.firstName,
 
-      lastName: user.lastName,
+  lastName: user.lastName,
 
-      roles,
+  mustChangePassword: user.mustChangePassword,
 
-      permissions,
+  roles,
 
-      scopes,
+  permissions,
 
-      roleAssignments,
-    };
+  scopes,
+
+  roleAssignments,
+};
 
     return authenticatedUser;
   }
 }
+
+

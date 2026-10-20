@@ -16,6 +16,7 @@ describe('FollowUpsService general update security', () => {
   const user = {
     id: 'staff-1',
     username: 'staff',
+    mustChangePassword: false,
     firstName: 'Test',
     lastName: 'Staff',
     roles: [],

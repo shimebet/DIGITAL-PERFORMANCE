@@ -1,4 +1,4 @@
-﻿import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserRolesController } from './user-roles.controller.js';
@@ -18,6 +18,7 @@ const globalAssignment = {
 const adminUser = {
   id: 'admin-1',
   username: 'admin',
+  mustChangePassword: false,
   firstName: 'System',
   lastName: 'Administrator',
   roles: ['SUPER_ADMIN'],
@@ -34,6 +35,7 @@ const adminUser = {
 const branchStaff = {
   id: 'staff-1',
   username: 'branch.staff',
+  mustChangePassword: false,
   firstName: 'Branch',
   lastName: 'Staff',
   roles: ['DIGITAL_RESKILLED_STAFF'],

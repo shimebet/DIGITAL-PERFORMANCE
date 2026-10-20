@@ -84,20 +84,99 @@ if (query.endDate) {
       await this.scopeService.assertBranchAccess(user, query.branchId);
 
       where.branchId = query.branchId;
-    } else if (query.districtId) {
-      await this.scopeService.assertDistrictAccess(user, query.districtId);
+  } else if (query.districtId) {
+  await this.scopeService.assertDistrictAccess(user, query.districtId);
+
+  const districtIds = this.scopeService.getDistrictIds(user);
+  const regionIds = this.scopeService.getRegionIds(user);
+  const branchIds = this.scopeService.getBranchIds(user);
+
+  const hasDistrictScope = districtIds.includes(query.districtId);
+
+  if (this.scopeService.isGlobal(user) || hasDistrictScope) {
+    where.branch = {
+      districtId: query.districtId,
+    };
+  } else if (regionIds.length > 0) {
+    // Confirm that the requested district belongs to an
+    // explicitly assigned region before allowing aggregation.
+    const district = await this.prisma.district.findFirst({
+      where: {
+        id: query.districtId,
+        regionId: { in: regionIds },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (district) {
+      where.branch = {
+        districtId: query.districtId,
+      };
+    } else {
+      // A parent district may be accessible through branch scope.
+      // Keep aggregation limited to explicitly assigned branches.
+      where.branchId =
+        branchIds.length === 1
+          ? branchIds[0]
+          : { in: branchIds };
 
       where.branch = {
         districtId: query.districtId,
       };
-    } else if (query.regionId) {
+    }
+  } else {
+    where.branchId =
+      branchIds.length === 1
+        ? branchIds[0]
+        : { in: branchIds };
+
+    where.branch = {
+      districtId: query.districtId,
+    };
+  }
+} else if (query.regionId) {
       await this.scopeService.assertRegionAccess(user, query.regionId);
 
-      where.branch = {
-        district: {
-          regionId: query.regionId,
-        },
-      };
+      const regionIds = this.scopeService.getRegionIds(user);
+      const districtIds = this.scopeService.getDistrictIds(user);
+      const branchIds = this.scopeService.getBranchIds(user);
+
+      if (
+        this.scopeService.isGlobal(user) ||
+        regionIds.includes(query.regionId)
+      ) {
+        where.branch = {
+          district: {
+            regionId: query.regionId,
+          },
+        };
+      } else {
+        where.OR = [
+          ...(districtIds.length
+            ? [{
+                branch: {
+                  districtId: { in: districtIds },
+                },
+              }]
+            : []),
+          ...(branchIds.length
+            ? [{
+                branchId: { in: branchIds },
+              }]
+            : []),
+        ];
+
+        where.branch = {
+          district: {
+            regionId: query.regionId,
+          },
+        };
+
+        if (districtIds.length === 0 && branchIds.length === 1) {
+          where.branchId = branchIds[0];
+        }
+      }
     } else if (!this.scopeService.isGlobal(user)) {
       const regionIds = this.scopeService.getRegionIds(user);
 
@@ -213,17 +292,88 @@ if (query.endDate) {
     } else if (query.districtId) {
       await this.scopeService.assertDistrictAccess(user, query.districtId);
 
-      where.branch = {
-        districtId: query.districtId,
-      };
+      const districtIds = this.scopeService.getDistrictIds(user);
+      const regionIds = this.scopeService.getRegionIds(user);
+      const branchIds = this.scopeService.getBranchIds(user);
+
+      if (
+        this.scopeService.isGlobal(user) ||
+        districtIds.includes(query.districtId)
+      ) {
+        where.branch = {
+          districtId: query.districtId,
+        };
+      } else {
+        // Verify regional membership before allowing district-wide data.
+        const district = regionIds.length
+          ? await this.prisma.district.findFirst({
+              where: {
+                id: query.districtId,
+                regionId: { in: regionIds },
+                deletedAt: null,
+              },
+              select: { id: true },
+            })
+          : null;
+
+        if (district) {
+          where.branch = {
+            districtId: query.districtId,
+          };
+        } else {
+          // Preserve branch-level restrictions.
+          where.branchId =
+            branchIds.length === 1
+              ? branchIds[0]
+              : { in: branchIds };
+
+          where.branch = {
+            districtId: query.districtId,
+          };
+        }
+      }
     } else if (query.regionId) {
       await this.scopeService.assertRegionAccess(user, query.regionId);
 
-      where.branch = {
-        district: {
-          regionId: query.regionId,
-        },
-      };
+      const regionIds = this.scopeService.getRegionIds(user);
+      const districtIds = this.scopeService.getDistrictIds(user);
+      const branchIds = this.scopeService.getBranchIds(user);
+
+      if (
+        this.scopeService.isGlobal(user) ||
+        regionIds.includes(query.regionId)
+      ) {
+        where.branch = {
+          district: {
+            regionId: query.regionId,
+          },
+        };
+      } else {
+        where.OR = [
+          ...(districtIds.length
+            ? [{
+                branch: {
+                  districtId: { in: districtIds },
+                },
+              }]
+            : []),
+          ...(branchIds.length
+            ? [{
+                branchId: { in: branchIds },
+              }]
+            : []),
+        ];
+
+        where.branch = {
+          district: {
+            regionId: query.regionId,
+          },
+        };
+
+        if (districtIds.length === 0 && branchIds.length === 1) {
+          where.branchId = branchIds[0];
+        }
+      }
     } else if (!this.scopeService.isGlobal(user)) {
       const regionIds = this.scopeService.getRegionIds(user);
 

@@ -290,24 +290,17 @@ private getDateRange(query: PerformanceQueryDto) {
           /*
            * Explicit district filter.
            */
-          ...(query.districtId
+          ...(query.districtId || query.regionId
             ? {
-              branch: {
-                districtId: query.districtId,
-              },
-            }
-            : {}),
-          /*
-           * Explicit region filter.
-           */
-          ...(query.regionId
-            ? {
-              branch: {
-                district: {
-                  regionId: query.regionId,
-                },
-              },
-            }
+                AND: [
+                  ...(query.districtId
+                    ? [{ branch: { districtId: query.districtId } }]
+                    : []),
+                  ...(query.regionId
+                    ? [{ branch: { district: { regionId: query.regionId } } }]
+                    : []),
+                ],
+              }
             : {}),
           /*
            * Security scope.
@@ -401,21 +394,16 @@ async dailyTrend(query: PerformanceQueryDto, user: AuthenticatedUser) {
           }
         : {}),
 
-      ...(query.districtId
+      ...(query.districtId || query.regionId
         ? {
-            branch: {
-              districtId: query.districtId,
-            },
-          }
-        : {}),
-
-      ...(query.regionId
-        ? {
-            branch: {
-              district: {
-                regionId: query.regionId,
-              },
-            },
+            AND: [
+              ...(query.districtId
+                ? [{ branch: { districtId: query.districtId } }]
+                : []),
+              ...(query.regionId
+                ? [{ branch: { district: { regionId: query.regionId } } }]
+                : []),
+            ],
           }
         : {}),
 
@@ -636,21 +624,31 @@ const date = activity.activityDate.toISOString().slice(0, 10);
             staffId: query.staffId,
           }
           : {}),
-        ...(query.districtId
+        ...(query.districtId || query.regionId
           ? {
-            branch: {
-              districtId: query.districtId,
-            },
-          }
-          : {}),
-        ...(query.regionId
-          ? {
-            branch: {
-              district: {
-                regionId: query.regionId,
-              },
-            },
-          }
+              AND: [
+                ...(query.districtId
+                  ? [
+                      {
+                        branch: {
+                          districtId: query.districtId,
+                        },
+                      },
+                    ]
+                  : []),
+                ...(query.regionId
+                  ? [
+                      {
+                        branch: {
+                          district: {
+                            regionId: query.regionId,
+                          },
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            }
           : {}),
         ...scopeFilter,
         // ...(query.productId

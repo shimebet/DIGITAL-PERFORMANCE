@@ -26,6 +26,10 @@ import {
 
 import { lockStaffActivity } from '../../database/prisma/staff-activity-lock.js';
 
+import {
+  canManageSubmission,
+  type SubmissionManagerPermission,
+} from './utils/submission-authorization.js';
 @Injectable()
 
 export class SubmissionsService {
@@ -916,6 +920,8 @@ async review(
 
   const submission = await this.findOne(id, user);
 
+  this.assertSubmissionManagerAccess(submission, user, 'submission.review');
+
   this.assertNotOwner(
 
     submission.staffId,
@@ -991,6 +997,8 @@ async approve(
   // Existing authorization and organizational scope check.
 
   const submission = await this.findOne(id, user);
+
+  this.assertSubmissionManagerAccess(submission, user, 'submission.approve');
 
   this.assertNotOwner(
 
@@ -1069,6 +1077,8 @@ async returnForCorrection(
   // Verify access and reviewer permissions.
 
   const submission = await this.findOne(id, user);
+
+  this.assertSubmissionManagerAccess(submission, user, 'submission.review');
 
   this.assertNotOwner(
 
@@ -1240,6 +1250,31 @@ async returnForCorrection(
 
   // ==========================================================================
 
+  private assertSubmissionManagerAccess(
+    submission: {
+      branchId: string;
+      branch: {
+        districtId: string;
+        district: {
+          regionId: string;
+        };
+      };
+    },
+    user: AuthenticatedUser,
+    permission: SubmissionManagerPermission,
+  ): void {
+    const allowed = canManageSubmission(user, permission, {
+      branchId: submission.branchId,
+      districtId: submission.branch.districtId,
+      regionId: submission.branch.district.regionId,
+    });
+
+    if (!allowed) {
+      throw new ForbiddenException(
+        'You do not have permission to manage this submission in its organizational scope',
+      );
+    }
+  }
   private assertNotOwner(
 
     submissionStaffId: string,

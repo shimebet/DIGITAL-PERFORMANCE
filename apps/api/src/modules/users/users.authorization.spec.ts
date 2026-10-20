@@ -33,6 +33,7 @@ describe('UsersController - Role Scope Authorization', () => {
   const baseUser: AuthenticatedUser = {
     id: 'user-1',
     username: 'testuser',
+    mustChangePassword: false,
     firstName: 'Test',
     lastName: 'User',
     roles: [],

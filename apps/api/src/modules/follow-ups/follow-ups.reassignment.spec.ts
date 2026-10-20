@@ -15,6 +15,7 @@ describe('FollowUpsService secure reassignment', () => {
   const manager = {
     id: 'manager-1',
     username: 'manager',
+    mustChangePassword: false,
     firstName: 'Test',
     lastName: 'Manager',
     roles: [],
@@ -469,6 +470,7 @@ describe('FollowUpsService secure reassignment', () => {
         {
           id: 'staff-new',
           username: 'staffnew',
+          mustChangePassword: false,
           firstName: 'New',
           lastName: 'Employee',
         },
