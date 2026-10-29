@@ -11,6 +11,7 @@ describe('TargetsController', () => {
     create: vi.fn(),
     findAll: vi.fn(),
     findOne: vi.fn(),
+    findOneScoped: vi.fn(),
     update: vi.fn(),
     remove: vi.fn(),
     assign: vi.fn(),
@@ -26,13 +27,24 @@ describe('TargetsController', () => {
     );
   });
 
+  // ============================================================
+  // CONTROLLER INITIALIZATION
+  // ============================================================
+
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
+  // ============================================================
+  // CREATE TARGET
+  // ============================================================
+
   it('creates a target using the current user', async () => {
-    const dto = {} as Parameters<TargetsController['create']>[0];
-    const user = {} as Parameters<TargetsController['create']>[1];
+    const dto =
+      {} as Parameters<TargetsController['create']>[0];
+
+    const user =
+      {} as Parameters<TargetsController['create']>[1];
 
     const expected = { id: 'target-1' };
 
@@ -44,86 +56,168 @@ describe('TargetsController', () => {
       dto,
       user,
     );
+
     expect(result).toEqual(expected);
   });
 
+  // ============================================================
+  // FIND ALL TARGETS
+  // ============================================================
+
   it('returns targets visible to the current user', async () => {
-    const user = {} as Parameters<TargetsController['findAll']>[0];
-    const expected = [{ id: 'target-1' }];
+    const user =
+      {} as Parameters<TargetsController['findAll']>[0];
+
+    const expected = [
+      { id: 'target-1' },
+    ];
 
     targetsServiceMock.findAll.mockResolvedValue(expected);
 
     const result = await controller.findAll(user);
 
-    expect(targetsServiceMock.findAll).toHaveBeenCalledWith(user);
-    expect(result).toEqual(expected);
-  });
-
-  it('returns a target by ID', async () => {
-    const expected = { id: 'target-1' };
-
-    targetsServiceMock.findOne.mockResolvedValue(expected);
-
-    const result = await controller.findOne('target-1');
-
-    expect(targetsServiceMock.findOne).toHaveBeenCalledWith(
-      'target-1',
+    expect(targetsServiceMock.findAll).toHaveBeenCalledWith(
+      user,
     );
+
     expect(result).toEqual(expected);
   });
+
+  // ============================================================
+  // FIND ONE TARGET - SCOPED ACCESS
+  // ============================================================
+
+  it('returns a target by ID using the current user', async () => {
+    const user =
+      {} as Parameters<TargetsController['findOne']>[1];
+
+    const expected = {
+      id: 'target-1',
+      name: 'October 2026 Target',
+      assignments: [],
+    };
+
+    targetsServiceMock.findOneScoped.mockResolvedValue(
+      expected,
+    );
+
+    const result = await controller.findOne(
+      'target-1',
+      user,
+    );
+
+    expect(
+      targetsServiceMock.findOneScoped,
+    ).toHaveBeenCalledWith(
+      'target-1',
+      user,
+    );
+
+    expect(result).toEqual(expected);
+
+    expect(
+      targetsServiceMock.findOne,
+    ).not.toHaveBeenCalled();
+  });
+
+  // ============================================================
+  // UPDATE TARGET
+  // ============================================================
 
   it('updates a target', async () => {
-    const dto = {} as Parameters<TargetsController['update']>[1];
-    const expected = { id: 'target-1', updated: true };
+    const dto =
+      {} as Parameters<TargetsController['update']>[1];
+
+    const expected = {
+      id: 'target-1',
+      updated: true,
+    };
 
     targetsServiceMock.update.mockResolvedValue(expected);
 
-    const result = await controller.update('target-1', dto);
+    const result = await controller.update(
+      'target-1',
+      dto,
+    );
 
     expect(targetsServiceMock.update).toHaveBeenCalledWith(
       'target-1',
       dto,
     );
+
     expect(result).toEqual(expected);
   });
 
+  // ============================================================
+  // REMOVE TARGET
+  // ============================================================
+
   it('removes a target', async () => {
-    const expected = { id: 'target-1', deleted: true };
+    const expected = {
+      id: 'target-1',
+      deleted: true,
+    };
 
     targetsServiceMock.remove.mockResolvedValue(expected);
 
-    const result = await controller.remove('target-1');
+    const result = await controller.remove(
+      'target-1',
+    );
 
     expect(targetsServiceMock.remove).toHaveBeenCalledWith(
       'target-1',
     );
+
     expect(result).toEqual(expected);
   });
 
-  it('assigns a target using the current user', async () => {
-    const dto = {} as Parameters<TargetsController['assign']>[0];
-    const user = {} as Parameters<TargetsController['assign']>[1];
+  // ============================================================
+  // ASSIGN TARGET
+  // ============================================================
 
-    const expected = { id: 'assignment-1' };
+  it('assigns a target using the current user', async () => {
+    const dto =
+      {} as Parameters<TargetsController['assign']>[0];
+
+    const user =
+      {} as Parameters<TargetsController['assign']>[1];
+
+    const expected = {
+      id: 'assignment-1',
+    };
 
     targetsServiceMock.assign.mockResolvedValue(expected);
 
-    const result = await controller.assign(dto, user);
+    const result = await controller.assign(
+      dto,
+      user,
+    );
 
     expect(targetsServiceMock.assign).toHaveBeenCalledWith(
       dto,
       user,
     );
+
     expect(result).toEqual(expected);
   });
 
+  // ============================================================
+  // FIND TARGET ASSIGNMENTS
+  // ============================================================
+
   it('returns target assignments for the current user', async () => {
     const user =
-      {} as Parameters<TargetsController['findAssignments']>[1];
+      {} as Parameters<
+        TargetsController['findAssignments']
+      >[1];
 
-    const expected = [{ id: 'assignment-1' }];
+    const expected = [
+      { id: 'assignment-1' },
+    ];
 
-    targetsServiceMock.findAssignments.mockResolvedValue(expected);
+    targetsServiceMock.findAssignments.mockResolvedValue(
+      expected,
+    );
 
     const result = await controller.findAssignments(
       'target-1',
@@ -132,18 +226,32 @@ describe('TargetsController', () => {
 
     expect(
       targetsServiceMock.findAssignments,
-    ).toHaveBeenCalledWith('target-1', user);
+    ).toHaveBeenCalledWith(
+      'target-1',
+      user,
+    );
 
     expect(result).toEqual(expected);
   });
 
+  // ============================================================
+  // REMOVE TARGET ASSIGNMENT
+  // ============================================================
+
   it('removes a target assignment using the current user', async () => {
     const user =
-      {} as Parameters<TargetsController['removeAssignment']>[1];
+      {} as Parameters<
+        TargetsController['removeAssignment']
+      >[1];
 
-    const expected = { id: 'assignment-1', deleted: true };
+    const expected = {
+      id: 'assignment-1',
+      deleted: true,
+    };
 
-    targetsServiceMock.removeAssignment.mockResolvedValue(expected);
+    targetsServiceMock.removeAssignment.mockResolvedValue(
+      expected,
+    );
 
     const result = await controller.removeAssignment(
       'assignment-1',
@@ -152,7 +260,10 @@ describe('TargetsController', () => {
 
     expect(
       targetsServiceMock.removeAssignment,
-    ).toHaveBeenCalledWith('assignment-1', user);
+    ).toHaveBeenCalledWith(
+      'assignment-1',
+      user,
+    );
 
     expect(result).toEqual(expected);
   });

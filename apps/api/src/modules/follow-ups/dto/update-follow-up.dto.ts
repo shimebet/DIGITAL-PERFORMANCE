@@ -1,3 +1,4 @@
+
 import {
   IsDateString,
   IsEnum,
@@ -12,10 +13,6 @@ import {
 } from '../../../generated/prisma/enums.js';
 
 export class UpdateFollowUpDto {
-  @IsOptional()
-  @IsUUID()
-  assignedToUserId?: string;
-
   @IsOptional()
   @IsUUID()
   productId?: string;

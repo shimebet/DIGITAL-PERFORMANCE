@@ -113,6 +113,19 @@ export class UsersController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     assertGlobalAdministrator(user);
+    if (dto.username !== undefined) {
+  const isSuperAdmin = user.roleAssignments?.some(
+    (assignment) =>
+      assignment.roleCode === 'SUPER_ADMIN' &&
+      assignment.scopeType === 'GLOBAL',
+  ) ?? false;
+
+  if (!isSuperAdmin) {
+    throw new ForbiddenException(
+      'Only a global Super Administrator can change usernames',
+    );
+  }
+}
 
     if (
       user.id === id &&

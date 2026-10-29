@@ -986,77 +986,146 @@ async review(
 
   // ==========================================================================
 
+
 async approve(
-
   id: string,
-
   user: AuthenticatedUser,
-
+  reason?: string,
 ) {
-
-  // Existing authorization and organizational scope check.
-
   const submission = await this.findOne(id, user);
 
-  this.assertSubmissionManagerAccess(submission, user, 'submission.approve');
-
-  this.assertNotOwner(
-
-    submission.staffId,
-
+  // Preserve existing permission and organizational scope checks.
+  this.assertSubmissionManagerAccess(
+    submission,
     user,
-
-    'approve',
-
+    'submission.approve',
   );
 
+  // Preserve segregation of duties.
+  this.assertNotOwner(
+    submission.staffId,
+    user,
+    'approve',
+  );
+
+  const organization = {
+    branchId: submission.branchId,
+    districtId: submission.branch.districtId,
+    regionId: submission.branch.district.regionId,
+  };
+
+  const assignments = user.roleAssignments ?? [];
+
+  // An independently authorized branch manager can perform
+  // routine approval for their own branch.
+  const hasRoutineBranchAuthority = assignments.some(
+    (assignment) =>
+      assignment.roleCode === 'BRANCH_MANAGER' &&
+      assignment.scopeType === 'BRANCH' &&
+      assignment.branchId === organization.branchId &&
+      Array.isArray(assignment.permissions) &&
+      assignment.permissions.includes('submission.approve'),
+  );
+
+  // Global SUPER_ADMIN retains administrative approval authority.
+  const hasSuperAdminAuthority = assignments.some(
+    (assignment) =>
+      assignment.roleCode === 'SUPER_ADMIN' &&
+      assignment.scopeType === 'GLOBAL' &&
+      Array.isArray(assignment.permissions),
+  );
+
+  const hasDistrictAuthority = assignments.some(
+    (assignment) =>
+      assignment.roleCode === 'DISTRICT_MANAGER' &&
+      assignment.scopeType === 'DISTRICT' &&
+      assignment.districtId === organization.districtId &&
+      Array.isArray(assignment.permissions) &&
+      assignment.permissions.includes('submission.approve'),
+  );
+
+  const hasRegionalAuthority = assignments.some(
+    (assignment) =>
+      assignment.roleCode === 'REGIONAL_MANAGER' &&
+      assignment.scopeType === 'REGION' &&
+      assignment.regionId === organization.regionId &&
+      Array.isArray(assignment.permissions) &&
+      assignment.permissions.includes('submission.approve'),
+  );
+
+  const normalizedReason =
+    typeof reason === 'string' ? reason.trim() : '';
+
+  const requiresJustification =
+    !hasRoutineBranchAuthority &&
+    !hasSuperAdminAuthority &&
+    (hasDistrictAuthority || hasRegionalAuthority);
+
+  if (requiresJustification && !normalizedReason) {
+    throw new BadRequestException(
+      'A written justification is required for district or regional manager approval',
+    );
+  }
+
+  const approvalAuthority = hasRoutineBranchAuthority
+    ? 'BRANCH_MANAGER'
+    : hasSuperAdminAuthority
+      ? 'SUPER_ADMIN'
+      : hasDistrictAuthority
+        ? 'DISTRICT_MANAGER'
+        : hasRegionalAuthority
+          ? 'REGIONAL_MANAGER'
+          : 'OTHER_AUTHORIZED_ROLE';
+
   return this.prisma.$transaction(async (tx) => {
-
     await lockStaffActivity(tx, submission.staffId);
-
-    // Lock the submission row until this transaction completes.
 
     const lockedSubmission = await lockSubmission(tx, id);
 
-    // Validate the current status, not the previously fetched status.
-
     if (lockedSubmission.status !== 'REVIEWED') {
-
       throw new BadRequestException(
-
         'Submission must be reviewed before approval',
-
       );
-
     }
 
-    return tx.dailySubmission.update({
+    const approvedAt = new Date();
 
-      where: {
-
-        id,
-
-      },
-
+    const updated = await tx.dailySubmission.update({
+      where: { id },
       data: {
-
         status: 'APPROVED',
-
-        approvedAt: new Date(),
-
+        approvedAt,
         approvedByUserId: user.id,
-
         returnReason: null,
-
       },
-
       include: this.submissionInclude(),
-
     });
 
-  });
+    await tx.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'APPROVE',
+        module: 'SUBMISSIONS',
+        entityType: 'DailySubmission',
+        entityId: id,
+        description: 'Daily submission approved',
+        oldValue: {
+          status: lockedSubmission.status,
+        },
+        newValue: {
+          status: 'APPROVED',
+          approvedByUserId: user.id,
+          approvedAt: approvedAt.toISOString(),
+          approvalAuthority,
+          justification: normalizedReason || null,
+        },
+      },
+    });
 
+    return updated;
+  });
 }
+
 
   // ==========================================================================
 

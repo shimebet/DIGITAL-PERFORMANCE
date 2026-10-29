@@ -68,7 +68,10 @@ export class UserRolesController {
   ) {
     assertGlobalAdministrator(request?.user);
 
-    return this.userRolesService.assign(dto);
+  return this.userRolesService.assign(
+  dto,
+  request.user.id,
+);
   }
 
   // ========================================================

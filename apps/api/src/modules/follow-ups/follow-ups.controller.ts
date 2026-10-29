@@ -61,7 +61,13 @@ export class FollowUpsController {
       user,
     );
   }
-
+@Get('eligible-staff')
+@Permissions('followup.create')
+eligibleStaff(
+  @CurrentUser() user: AuthenticatedUser,
+) {
+  return this.followUpsService.eligibleStaff(user);
+}
   @Get('mine')
   @Permissions('followup.read')
   findMine(

@@ -1,3 +1,4 @@
+
 import {
   IsEnum,
   IsOptional,
@@ -26,7 +27,14 @@ export class AssignUserRoleDto {
   @IsUUID()
   districtId?: string;
 
+  // Organizational scope for BRANCH roles.
   @IsOptional()
   @IsUUID()
   branchId?: string;
+
+  // Staff workplace, used only when assigning
+  // DIGITAL_RESKILLED_STAFF at STAFF scope.
+  @IsOptional()
+  @IsUUID()
+  staffBranchId?: string;
 }

@@ -60,21 +60,22 @@ export class PermissionsGuard
       return false;
     }
 
-    if (
-      user.roles.includes(
-        'SUPER_ADMIN',
-      )
-    ) {
-      return true;
-    }
+const isGlobalSuperAdmin =
+  user.roleAssignments?.some(
+    (assignment) =>
+      assignment.roleCode === 'SUPER_ADMIN' &&
+      assignment.scopeType === 'GLOBAL',
+  ) === true;
 
-    const allowed =
-      requiredPermissions.every(
-        (permission) =>
-          user.permissions.includes(
-            permission,
-          ),
-      );
+if (isGlobalSuperAdmin) {
+  return true;
+}
+
+const allowed = requiredPermissions.every((permission) =>
+  user.roleAssignments?.some((assignment) =>
+    assignment.permissions?.includes(permission),
+  ) === true,
+);
 
     if (!allowed) {
       throw new ForbiddenException(

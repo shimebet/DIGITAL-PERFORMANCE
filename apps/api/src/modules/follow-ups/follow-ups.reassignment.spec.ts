@@ -30,6 +30,7 @@ describe('FollowUpsService secure reassignment', () => {
     assignedToUserId: 'staff-old',
     isEnabled: true,
     deletedAt: null,
+    
   };
 
   const branch = {

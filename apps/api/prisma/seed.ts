@@ -1441,8 +1441,9 @@ async function main() {
     'submission.review',
     'submission.approve',
 
-    'followup.read',
-    'followup.update',
+'followup.create',
+'followup.read',
+'followup.update',
 
     'report.read',
     'report.export',
@@ -1475,10 +1476,10 @@ async function main() {
     'submission.read',
     'submission.submit',
 
-    // Customer follow-up workflow.
-    'followup.create',
-    'followup.read',
-    'followup.update',
+// Assigned customer follow-up workflow.
+// Digital staff cannot create follow-ups.
+'followup.read',
+'followup.update',
 
     'alert.read',
   ] as const;

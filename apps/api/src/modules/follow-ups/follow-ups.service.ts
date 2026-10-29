@@ -32,14 +32,150 @@ import {
 import {
   ReassignFollowUpDto,
 } from './dto/reassign-follow-up.dto.js';
+import {
+  hasScopedPermission,
+} from '../auth/services/scoped-permission.js';
+
 
 @Injectable()
 export class FollowUpsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scopeService: ScopeService,
-  ) {}
+  ) { }
+  async eligibleStaff(currentUser: AuthenticatedUser) {
+    // Only users with an active, scoped management assignment
+    // granting followup.create may retrieve staff options.
+    const assignments =
+      currentUser.roleAssignments?.filter(
+        (assignment) =>
+          assignment.permissions?.includes('followup.create') &&
+          [
+            'BRANCH_MANAGER',
+            'DISTRICT_MANAGER',
+            'REGIONAL_MANAGER',
+          ].includes(assignment.roleCode),
+      ) ?? [];
 
+    if (assignments.length === 0) {
+      throw new ForbiddenException(
+        'You are not authorized to assign follow-ups',
+      );
+    }
+
+    const branchIds = assignments
+      .filter(
+        (assignment) =>
+          assignment.scopeType === 'BRANCH' &&
+          assignment.branchId,
+      )
+      .map((assignment) => assignment.branchId!);
+
+    const districtIds = assignments
+      .filter(
+        (assignment) =>
+          assignment.scopeType === 'DISTRICT' &&
+          assignment.districtId,
+      )
+      .map((assignment) => assignment.districtId!);
+
+    const regionIds = assignments
+      .filter(
+        (assignment) =>
+          assignment.scopeType === 'REGION' &&
+          assignment.regionId,
+      )
+      .map((assignment) => assignment.regionId!);
+
+    const branchFilters = [
+      ...(branchIds.length > 0
+        ? [{ branchId: { in: branchIds } }]
+        : []),
+
+      ...(districtIds.length > 0
+        ? [{
+          branch: {
+            districtId: { in: districtIds },
+          },
+        }]
+        : []),
+
+      ...(regionIds.length > 0
+        ? [{
+          branch: {
+            district: {
+              regionId: { in: regionIds },
+            },
+          },
+        }]
+        : []),
+    ];
+
+    if (branchFilters.length === 0) {
+      throw new ForbiddenException(
+        'No authorized branch scope found',
+      );
+    }
+
+   const staff = await this.prisma.staffProfile.findMany({
+  where: {
+    status: 'ACTIVE',
+    digitalReskilled: true,
+
+    OR: branchFilters,
+
+    user: {
+      deletedAt: null,
+      status: 'ACTIVE',
+      roles: {
+        some: {
+          role: {
+            code: 'DIGITAL_RESKILLED_STAFF',
+            status: 'ACTIVE',
+          },
+        },
+      },
+    },
+
+    branch: {
+      deletedAt: null,
+      district: {
+        deletedAt: null,
+      },
+    },
+  },
+
+  select: {
+    branchId: true,
+    status: true,
+
+    branch: {
+      select: {
+        name: true,
+      },
+    },
+
+    user: {
+      select: {
+        id: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        status: true,
+      },
+    },
+  },
+});
+
+return staff.map((profile) => ({
+  ...profile.user,
+  staffProfile: {
+    branchId: profile.branchId,
+    status: profile.status,
+    branch: profile.branch,
+  },
+}));
+  }
   // ==========================================================================
   // CREATE
   // ==========================================================================
@@ -48,26 +184,57 @@ export class FollowUpsService {
     dto: CreateFollowUpDto,
     currentUser: AuthenticatedUser,
   ) {
-    const assignedUser =
-      await this.prisma.user.findFirst({
-        where: {
-          id: dto.assignedToUserId,
-          deletedAt: null,
+const now = new Date();
+
+const assignedUser = await this.prisma.user.findFirst({
+  where: {
+    id: dto.assignedToUserId,
+    deletedAt: null,
+    status: 'ACTIVE',
+
+    staffProfile: {
+      is: {
+        status: 'ACTIVE',
+        digitalReskilled: true,
+      },
+    },
+
+    roles: {
+      some: {
+        role: {
+          code: 'DIGITAL_RESKILLED_STAFF',
           status: 'ACTIVE',
         },
+        AND: [
+          {
+            OR: [
+              { validFrom: null },
+              { validFrom: { lte: now } },
+            ],
+          },
+          {
+            OR: [
+              { validTo: null },
+              { validTo: { gte: now } },
+            ],
+          },
+        ],
+      },
+    },
+  },
 
-        include: {
-          staffProfile: {
-            include: {
-              branch: {
-                include: {
-                  district: true,
-                },
-              },
-            },
+  include: {
+    staffProfile: {
+      include: {
+        branch: {
+          include: {
+            district: true,
           },
         },
-      });
+      },
+    },
+  },
+});
 
     if (!assignedUser) {
       throw new NotFoundException(
@@ -81,10 +248,33 @@ export class FollowUpsService {
       );
     }
 
-    await this.scopeService.assertBranchAccess(
+
+    const assignedBranch =
+      assignedUser.staffProfile.branch;
+
+    const canCreateFollowUp = hasScopedPermission(
       currentUser,
-      assignedUser.staffProfile.branchId,
+      'followup.create',
+      {
+        branchId: assignedUser.staffProfile.branchId,
+        districtId: assignedBranch.districtId,
+        regionId: assignedBranch.district.regionId,
+      },
+      [
+        'SUPER_ADMIN',
+        'SYSTEM_ADMIN',
+        'REGIONAL_MANAGER',
+        'DISTRICT_MANAGER',
+        'BRANCH_MANAGER',
+      ],
     );
+
+    if (!canCreateFollowUp) {
+      throw new ForbiddenException(
+        'You do not have permission to create follow-ups in this branch',
+      );
+    }
+
 
     if (dto.productId) {
       const product =
@@ -103,25 +293,38 @@ export class FollowUpsService {
       }
     }
 
-    if (dto.activityId) {
-      const activity =
-        await this.prisma.activity.findUnique({
-          where: {
-            id: dto.activityId,
-          },
-        });
 
-      if (!activity) {
-        throw new NotFoundException(
-          'Activity not found',
-        );
-      }
+if (dto.activityId) {
+  // 1. Retrieve the linked activity
+  const activity = await this.prisma.activity.findUnique({
+    where: {
+      id: dto.activityId,
+    },
+  });
 
-      await this.scopeService.assertBranchAccess(
-        currentUser,
-        activity.branchId,
-      );
-    }
+  // 2. Verify that the activity exists
+  if (!activity) {
+    throw new NotFoundException(
+      'Activity not found',
+    );
+  }
+
+  // 3. Verify the current user can access the activity branch
+  await this.scopeService.assertBranchAccess(
+    currentUser,
+    activity.branchId,
+  );
+
+  // 4. Ensure the activity belongs to the assigned staff's branch
+  if (
+    activity.branchId !== assignedUser.staffProfile.branchId
+  ) {
+    throw new BadRequestException(
+      'Linked activity must belong to the assigned staff branch',
+    );
+  }
+}
+
 
     const followUp =
       await this.prisma.followUp.create({
@@ -280,17 +483,17 @@ export class FollowUpsService {
   async findMyOverdue(
     user: AuthenticatedUser,
   ) {
-// Today's Ethiopia-local calendar date, represented
-// as UTC midnight for comparison with MySQL DATE columns.
-const now = new Date();
+    // Today's Ethiopia-local calendar date, represented
+    // as UTC midnight for comparison with MySQL DATE columns.
+    const now = new Date();
 
-const ethiopiaToday = new Date(
-  now.getTime() + 3 * 60 * 60 * 1000,
-)
-  .toISOString()
-  .slice(0, 10);
+    const ethiopiaToday = new Date(
+      now.getTime() + 3 * 60 * 60 * 1000,
+    )
+      .toISOString()
+      .slice(0, 10);
 
-const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
+    const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
 
     return this.prisma.followUp.findMany({
       where: {
@@ -327,134 +530,200 @@ const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
     });
   }
 
+
+  private canAccessFollowUp(
+    user: AuthenticatedUser,
+    followUp: {
+      assignedToUserId: string | null;
+      branchId: string;
+      branch: {
+        districtId: string;
+        district: {
+          regionId: string;
+        };
+      };
+    },
+    permission: 'followup.read' | 'followup.update',
+  ): boolean {
+    const resource = {
+      branchId: followUp.branchId,
+      districtId: followUp.branch.districtId,
+      regionId: followUp.branch.district.regionId,
+    };
+
+    // Digital Reskilled Staff may access only their
+    // own assigned follow-ups when their STAFF role
+    // explicitly grants the requested permission.
+    if (followUp.assignedToUserId === user.id) {
+      const hasStaffPermission =
+        user.roleAssignments?.some(
+          (assignment) =>
+            assignment.roleCode === 'DIGITAL_RESKILLED_STAFF' &&
+            assignment.scopeType === 'STAFF' &&
+            assignment.permissions?.includes(permission),
+        ) === true;
+
+      if (hasStaffPermission) {
+        return true;
+      }
+    }
+
+    // Administrative access requires an authorized
+    // GLOBAL role assignment with the permission.
+    const hasGlobalAdminPermission =
+      user.roleAssignments?.some(
+        (assignment) =>
+          (assignment.roleCode === 'SUPER_ADMIN' ||
+            assignment.roleCode === 'SYSTEM_ADMIN') &&
+          assignment.scopeType === 'GLOBAL' &&
+          assignment.permissions?.includes(permission),
+      ) === true;
+
+    if (hasGlobalAdminPermission) {
+      return true;
+    }
+
+    // Organizational access is limited to management roles.
+    // Permission and organizational scope must belong
+    // to the SAME authenticated role assignment.
+    return hasScopedPermission(
+      user,
+      permission,
+      resource,
+      [
+        'REGIONAL_MANAGER',
+        'DISTRICT_MANAGER',
+        'BRANCH_MANAGER',
+      ],
+    );
+  }
+
+
   // ==========================================================================
   // FIND ALL SCOPED
   // ==========================================================================
 
-  async findAllScoped(
-    user: AuthenticatedUser,
-  ) {
-    if (
-      this.scopeService.isGlobal(
-        user,
-      )
-    ) {
-      return this.prisma.followUp.findMany({
-        where: { deletedAt: null },
-        include: {
-          product:
-            true,
 
+  // ==========================================================================
+  // FIND ALL SCOPED - PERMISSION-AWARE VISIBILITY
+  // ==========================================================================
+
+  async findAllScoped(user: AuthenticatedUser) {
+    const assignments = user.roleAssignments ?? [];
+
+    const filters: Array<Record<string, unknown>> = [];
+
+    const managerRoles = new Set([
+      'REGIONAL_MANAGER',
+      'DISTRICT_MANAGER',
+      'BRANCH_MANAGER',
+    ]);
+
+    const globalAdminRoles = new Set([
+      'SUPER_ADMIN',
+      'SYSTEM_ADMIN',
+    ]);
+
+    for (const assignment of assignments) {
+      // Permission must belong to this specific role assignment.
+      if (!assignment.permissions?.includes('followup.read')) {
+        continue;
+      }
+
+      // Global access requires an administrator role
+      // explicitly assigned at GLOBAL scope.
+      if (
+        assignment.scopeType === 'GLOBAL' &&
+        globalAdminRoles.has(assignment.roleCode)
+      ) {
+        filters.push({});
+        continue;
+      }
+
+      // Staff access is limited to their own assignments.
+      if (
+        assignment.roleCode === 'DIGITAL_RESKILLED_STAFF' &&
+        assignment.scopeType === 'STAFF'
+      ) {
+        filters.push({
+          assignedToUserId: user.id,
+        });
+
+        continue;
+      }
+
+      // Only managerial roles may list organizational records.
+      if (!managerRoles.has(assignment.roleCode)) {
+        continue;
+      }
+
+      if (
+        assignment.scopeType === 'REGION' &&
+        assignment.regionId
+      ) {
+        filters.push({
           branch: {
-            include: {
-              district: {
-                include: {
-                  region:
-                    true,
-                },
-              },
+            district: {
+              regionId: assignment.regionId,
             },
           },
+        });
 
-          assignedTo: {
-            select: {
-              id:
-                true,
+        continue;
+      }
 
-              username:
-                true,
-
-              firstName:
-                true,
-
-              lastName:
-                true,
-            },
+      if (
+        assignment.scopeType === 'DISTRICT' &&
+        assignment.districtId
+      ) {
+        filters.push({
+          branch: {
+            districtId: assignment.districtId,
           },
-        },
+        });
 
-        orderBy: {
-          followUpDate:
-            'desc',
-        },
-      });
+        continue;
+      }
+
+      if (
+        assignment.scopeType === 'BRANCH' &&
+        assignment.branchId
+      ) {
+        filters.push({
+          branchId: assignment.branchId,
+        });
+      }
     }
 
-    const regionIds =
-      this.scopeService.getRegionIds(
-        user,
-      );
+    // Fail closed: users without an authorized filter
+    // must not receive any follow-up records.
+    if (filters.length === 0) {
+      return [];
+    }
 
-    const districtIds =
-      this.scopeService.getDistrictIds(
-        user,
-      );
-
-    const branchIds =
-      this.scopeService.getBranchIds(
-        user,
-      );
+    const hasGlobalAccess = filters.some(
+      (filter) => Object.keys(filter).length === 0,
+    );
 
     return this.prisma.followUp.findMany({
       where: {
         deletedAt: null,
-        OR: [
-          {
-            assignedToUserId:
-              user.id,
-          },
 
-          ...(branchIds.length
-            ? [
-                {
-                  branchId: {
-                    in:
-                      branchIds,
-                  },
-                },
-              ]
-            : []),
-
-          ...(districtIds.length
-            ? [
-                {
-                  branch: {
-                    districtId: {
-                      in:
-                        districtIds,
-                    },
-                  },
-                },
-              ]
-            : []),
-
-          ...(regionIds.length
-            ? [
-                {
-                  branch: {
-                    district: {
-                      regionId: {
-                        in:
-                          regionIds,
-                      },
-                    },
-                  },
-                },
-              ]
-            : []),
-        ],
+        ...(hasGlobalAccess
+          ? {}
+          : {
+              OR: filters,
+            }),
       },
 
       include: {
-        product:
-          true,
+        product: true,
 
         branch: {
           include: {
             district: {
               include: {
-                region:
-                  true,
+                region: true,
               },
             },
           },
@@ -462,27 +731,20 @@ const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
 
         assignedTo: {
           select: {
-            id:
-              true,
-
-            username:
-              true,
-
-            firstName:
-              true,
-
-            lastName:
-              true,
+            id: true,
+            username: true,
+            firstName: true,
+            lastName: true,
           },
         },
       },
 
       orderBy: {
-        followUpDate:
-          'desc',
+        followUpDate: 'desc',
       },
     });
   }
+
 
   // ==========================================================================
   // FIND ONE
@@ -493,7 +755,8 @@ const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
     user: AuthenticatedUser,
   ) {
     const followUp =
-      await this.prisma.followUp.findFirst({ where: { id, deletedAt: null },
+      await this.prisma.followUp.findFirst({
+        where: { id, deletedAt: null },
 
         include: {
           product:
@@ -578,24 +841,21 @@ const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
       );
     }
 
-    if (
-      followUp.assignedToUserId ===
-        user.id ||
-      followUp.createdByUserId ===
-        user.id ||
-      this.scopeService.isGlobal(
-        user,
-      )
-    ) {
-      return followUp;
-    }
+  
+if (
+  !this.canAccessFollowUp(
+    user,
+    followUp,
+    'followup.read',
+  )
+) {
+  throw new ForbiddenException(
+    'You do not have permission to view this follow-up',
+  );
+}
 
-    await this.scopeService.assertBranchAccess(
-      user,
-      followUp.branchId,
-    );
+return followUp;
 
-    return followUp;
   }
 
   // ==========================================================================
@@ -612,6 +872,18 @@ const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
         id,
         user,
       );
+
+if (
+  !this.canAccessFollowUp(
+    user,
+    existing,
+    'followup.update',
+  )
+) {
+  throw new ForbiddenException(
+    'You do not have permission to edit this follow-up',
+  );
+}
 
     if (!existing.isEnabled || existing.deletedAt) {
       throw new BadRequestException(
@@ -652,7 +924,7 @@ const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
       },
 
       data: {
-productId:
+        productId:
           dto.productId,
 
         customerReference:
@@ -673,15 +945,15 @@ productId:
         followUpDate:
           dto.followUpDate
             ? new Date(
-                dto.followUpDate,
-              )
+              dto.followUpDate,
+            )
             : undefined,
 
         nextFollowUpDate:
           dto.nextFollowUpDate
             ? new Date(
-                dto.nextFollowUpDate,
-              )
+              dto.nextFollowUpDate,
+            )
             : undefined,
 
         remarks:
@@ -697,39 +969,71 @@ productId:
   // UPDATE STATUS + HISTORY
   // ==========================================================================
 
+ 
+  // ==========================================================================
+  // UPDATE FOLLOW-UP STATUS + HISTORY
+  // ==========================================================================
+
   async updateStatus(
     id: string,
     dto: UpdateFollowUpStatusDto,
     user: AuthenticatedUser,
   ) {
-    const followUp =
-      await this.findOne(
-        id,
-        user,
-      );
+    const followUp = await this.findOne(id, user);
 
+    // 1. Reject disabled or deleted follow-ups
     if (!followUp.isEnabled || followUp.deletedAt) {
       throw new BadRequestException(
         'Disabled or deleted follow-ups cannot change status',
       );
     }
 
-    if (
-      followUp.assignedToUserId !==
-        user.id &&
-      !this.scopeService.isGlobal(
-        user,
-      )
-    ) {
-      await this.scopeService.assertBranchAccess(
-        user,
-        followUp.branchId,
+    // 2. Protect completed follow-ups from further status changes
+    const completedStatuses = [
+      'CONVERTED',
+      'NOT_INTERESTED',
+      'UNREACHABLE',
+      'CLOSED',
+    ] as const;
+
+    const isCompletedStatus = (status: string): boolean =>
+      completedStatuses.some(
+        (completedStatus) => completedStatus === status,
+      );
+
+    if (isCompletedStatus(followUp.status)) {
+      throw new BadRequestException(
+        'Completed follow-ups cannot change status. ' +
+          'Contact an authorized manager if correction is required.',
       );
     }
 
+    // 3. Prevent duplicate status changes
+    if (dto.status === followUp.status) {
+      throw new BadRequestException(
+        'New status must differ from the current status',
+      );
+    }
+
+    // 4. Enforce role-specific update permission and scope.
+    // Permission and organizational scope must come from
+    // the same authenticated role assignment.
     if (
-      dto.status ===
-        'RESCHEDULED' &&
+      !this.canAccessFollowUp(
+        user,
+        followUp,
+        'followup.update',
+      )
+    ) {
+      throw new ForbiddenException(
+        'You do not have permission to update this follow-up status',
+      );
+    }
+
+
+    // 5. Validate rescheduling requirements
+    if (
+      dto.status === 'RESCHEDULED' &&
       !dto.nextFollowUpDate
     ) {
       throw new BadRequestException(
@@ -737,68 +1041,57 @@ productId:
       );
     }
 
-    const completedStatuses = [
-      'CONVERTED',
-      'NOT_INTERESTED',
-      'UNREACHABLE',
-      'CLOSED',
-    ];
+    // 6. Validate the supplied date
+    if (dto.status === 'RESCHEDULED') {
+      const nextDate = new Date(dto.nextFollowUpDate!);
 
-    return this.prisma.$transaction(
-      async (tx) => {
-        const updated =
-          await tx.followUp.update({
-            where: {
-              id,
-              deletedAt: null,
-              isEnabled: true,
-              status: followUp.status,
-            },
-            data: {
-              status:
-                dto.status,
+      if (Number.isNaN(nextDate.getTime())) {
+        throw new BadRequestException(
+          'Invalid next follow-up date',
+        );
+      }
+    }
 
-              outcome:
-                dto.outcome?.trim(),
+    // 7. Update follow-up and create audit history atomically
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.followUp.update({
+        where: {
+          id,
+          deletedAt: null,
+          isEnabled: true,
+          status: followUp.status,
+        },
+        data: {
+          status: dto.status,
 
-              nextFollowUpDate:
-                dto.nextFollowUpDate
-                  ? new Date(
-                      dto.nextFollowUpDate,
-                    )
-                  : undefined,
+          outcome:
+            dto.outcome !== undefined
+              ? dto.outcome.trim()
+              : undefined,
 
-              completedAt:
-                completedStatuses.includes(
-                  dto.status,
-                )
-                  ? new Date()
-                  : null,
-            },
-          });
+          nextFollowUpDate:
+            dto.status === 'RESCHEDULED'
+              ? new Date(dto.nextFollowUpDate!)
+              : null,
 
-        await tx.followUpHistory.create({
-          data: {
-            followUpId:
-              id,
+          completedAt: isCompletedStatus(dto.status)
+            ? new Date()
+            : null,
+        },
+      });
 
-            changedByUserId:
-              user.id,
+      await tx.followUpHistory.create({
+        data: {
+          followUpId: id,
+          changedByUserId: user.id,
+          previousStatus: followUp.status,
+          newStatus: dto.status,
+          note: dto.note?.trim(),
+        },
+      });
 
-            previousStatus:
-              followUp.status,
-
-            newStatus:
-              dto.status,
-
-            note:
-              dto.note?.trim(),
-          },
-        });
-
-        return updated;
-      },
-    );
+      return updated;
+    });
   }
 
   // ==========================================================================
@@ -1288,17 +1581,17 @@ productId:
       (item) => item.isEnabled,
     );
 
-// Today's Ethiopia-local calendar date, represented
-// as UTC midnight for comparison with MySQL DATE columns.
-const now = new Date();
+    // Today's Ethiopia-local calendar date, represented
+    // as UTC midnight for comparison with MySQL DATE columns.
+    const now = new Date();
 
-const ethiopiaToday = new Date(
-  now.getTime() + 3 * 60 * 60 * 1000,
-)
-  .toISOString()
-  .slice(0, 10);
+    const ethiopiaToday = new Date(
+      now.getTime() + 3 * 60 * 60 * 1000,
+    )
+      .toISOString()
+      .slice(0, 10);
 
-const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
+    const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
 
     return {
       total:
@@ -1336,7 +1629,7 @@ const today = new Date(`${ethiopiaToday}T00:00:00.000Z`);
         all.filter(
           (item) =>
             item.followUpDate <
-              today &&
+            today &&
             [
               'OPEN',
               'CONTACTED',

@@ -314,6 +314,11 @@ private getDateRange(query: PerformanceQueryDto) {
            */
           ...scopeFilter,
         },
+        submission: {
+  is: {
+    status: 'APPROVED',
+  },
+},
       },
       include: {
         product: true,
@@ -377,6 +382,11 @@ async dailyTrend(query: PerformanceQueryDto, user: AuthenticatedUser) {
 
   const activities = await this.prisma.activity.findMany({
     where: {
+      submission: {
+  is: {
+    status: 'APPROVED',
+  },
+},
       activityDate: {
         gte: startDate,
         lte: endDate,
@@ -536,49 +546,50 @@ const date = activity.activityDate.toISOString().slice(0, 10);
   });
 }
 
-  private buildScopeFilter(user: AuthenticatedUser) {
-    // ==========================================================================
-    // DIGITAL STAFF
-    //
-    // Digital Reskilled Staff must always see only their own activity data.
-    //
-    // Even if another organizational scope is accidentally assigned later,
-    // it must never widen staff-level performance visibility.
-    // ==========================================================================
-    if (user.roles.includes('DIGITAL_RESKILLED_STAFF')) {
-      return {
-        staffId: user.id,
-      };
-    }
-    // ==========================================================================
-    // GLOBAL
-    // ==========================================================================
-    if (this.scopeService.isGlobal(user)) {
-      return {};
-    }
-    // ==========================================================================
-    // MANAGEMENT ORGANIZATIONAL SCOPES
-    // ==========================================================================
-    const regionIds = this.scopeService.getRegionIds(user);
-    const districtIds = this.scopeService.getDistrictIds(user);
-    const branchIds = this.scopeService.getBranchIds(user);
+  
+private buildScopeFilter(user: AuthenticatedUser) {
+  // Staff-only accounts can access their own activity records.
+  // A mixed-role account does not receive this fallback.
+  const isStaffOnly =
+    user.roles.length === 1 &&
+    user.roles[0] === 'DIGITAL_RESKILLED_STAFF' &&
+    user.roleAssignments?.some(
+      (assignment) =>
+        assignment.roleCode === 'DIGITAL_RESKILLED_STAFF' &&
+        assignment.scopeType === 'STAFF',
+    ) === true;
+
+  if (isStaffOnly) {
     return {
-      OR: [
-        // Own records are always visible.
-        {
-          staffId: user.id,
-        },
-        ...(branchIds.length
-          ? [
+      staffId: user.id,
+    };
+  }
+
+  // Global administrators retain global access.
+  if (this.scopeService.isGlobal(user)) {
+    return {};
+  }
+
+  // Management accounts access only explicitly assigned
+  // organizational scopes.
+  const regionIds = this.scopeService.getRegionIds(user);
+  const districtIds = this.scopeService.getDistrictIds(user);
+  const branchIds = this.scopeService.getBranchIds(user);
+
+  return {
+    OR: [
+      ...(branchIds.length > 0
+        ? [
             {
               branchId: {
                 in: branchIds,
               },
             },
           ]
-          : []),
-        ...(districtIds.length
-          ? [
+        : []),
+
+      ...(districtIds.length > 0
+        ? [
             {
               branch: {
                 districtId: {
@@ -587,9 +598,10 @@ const date = activity.activityDate.toISOString().slice(0, 10);
               },
             },
           ]
-          : []),
-        ...(regionIds.length
-          ? [
+        : []),
+
+      ...(regionIds.length > 0
+        ? [
             {
               branch: {
                 district: {
@@ -600,16 +612,22 @@ const date = activity.activityDate.toISOString().slice(0, 10);
               },
             },
           ]
-          : []),
-      ],
-    };
-  }
+        : []),
+    ],
+  };
+}
+
   async summary(query: PerformanceQueryDto, user: AuthenticatedUser) {
     await this.validateScope(user, query);
     const { startDate, endDate } = this.getDateRange(query);
     const scopeFilter = this.buildScopeFilter(user);
     const activities = await this.prisma.activity.findMany({
       where: {
+        submission: {
+  is: {
+    status: 'APPROVED',
+  },
+},
         activityDate: {
           gte: startDate,
           lte: endDate,
@@ -1242,14 +1260,26 @@ if (query.productId) {
      * StaffProfile so branch-target lookup is
      * restricted correctly.
      */
-    const staffProfile = await this.prisma.staffProfile.findUnique({
+const isStaffOnly =
+  user.roles.length === 1 &&
+  user.roles[0] === 'DIGITAL_RESKILLED_STAFF' &&
+  user.roleAssignments?.some(
+    (assignment) =>
+      assignment.roleCode === 'DIGITAL_RESKILLED_STAFF' &&
+      assignment.scopeType === 'STAFF',
+  ) === true;
+
+const staffProfile = isStaffOnly
+  ? await this.prisma.staffProfile.findUnique({
       where: {
         userId: user.id,
       },
       select: {
         branchId: true,
+        status: true,
       },
-    });
+    })
+  : null;
     const orConditions: Array<Record<string, unknown>> = [];
     if (branchIds.length > 0) {
       orConditions.push({
@@ -1274,11 +1304,15 @@ if (query.productId) {
         },
       });
     }
-    if (staffProfile?.branchId) {
-      orConditions.push({
-        id: staffProfile.branchId,
-      });
-    }
+if (
+  isStaffOnly &&
+  staffProfile?.status === 'ACTIVE' &&
+  staffProfile.branchId
+) {
+  orConditions.push({
+    id: staffProfile.branchId,
+  });
+}
     /*
      * Non-global user with no resolved
      * organization scope gets no branches.

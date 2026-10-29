@@ -60,16 +60,21 @@ findAll(
   return this.targetsService.findAll(user);
 }
 
-  @Get(':id')
-  @Permissions('target.read')
-  findOne(
-    @Param('id')
-    id: string,
-  ) {
-    return this.targetsService.findOne(
-      id,
-    );
-  }
+@Get(':id')
+@Permissions('target.read')
+findOne(
+  @Param('id')
+  id: string,
+
+  @CurrentUser()
+  user: AuthenticatedUser,
+) {
+  return this.targetsService.findOneScoped(
+    id,
+    user,
+  );
+
+}
 
   @Patch(':id')
   @Permissions('target.update')

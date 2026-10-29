@@ -1,3 +1,4 @@
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -12,39 +13,97 @@ import type { PrismaService } from '../../database/prisma/prisma.service.js';
 import type { ScopeService } from '../auth/services/scope.service.js';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
 
+import type { UpdateFollowUpDto } from './dto/update-follow-up.dto.js';
+
 describe('FollowUpsService general update security', () => {
-  const user = {
-    id: 'staff-1',
-    username: 'staff',
+  // -------------------------------------------------------
+  // 1. Authenticated Branch Manager fixture
+  // -------------------------------------------------------
+
+  const user: AuthenticatedUser = {
+    id: 'manager-1',
+    username: 'branch-manager',
     mustChangePassword: false,
     firstName: 'Test',
-    lastName: 'Staff',
-    roles: [],
-    permissions: [],
-    scopes: [],
-    roleAssignments: [],
-  } satisfies AuthenticatedUser;
+    lastName: 'Manager',
+
+    roles: ['BRANCH_MANAGER'],
+
+    permissions: [
+      'followup.read',
+      'followup.update',
+    ],
+
+    scopes: [
+      {
+        scopeType: 'BRANCH',
+        regionId: null,
+        districtId: null,
+        branchId: 'branch-a',
+      },
+    ],
+
+    roleAssignments: [
+      {
+        roleCode: 'BRANCH_MANAGER',
+        scopeType: 'BRANCH',
+        regionId: null,
+        districtId: null,
+        branchId: 'branch-a',
+        permissions: [
+          'followup.read',
+          'followup.update',
+        ],
+      },
+    ],
+  };
+
+  // -------------------------------------------------------
+  // 2. Follow-up fixture with organizational hierarchy
+  // -------------------------------------------------------
 
   const followUp = {
     id: 'follow-up-1',
     branchId: 'branch-a',
     assignedToUserId: 'staff-1',
+    createdByUserId: 'manager-1',
+
     isEnabled: true,
     deletedAt: null,
+
+    branch: {
+      id: 'branch-a',
+      districtId: 'district-a',
+
+      district: {
+        id: 'district-a',
+        regionId: 'region-a',
+      },
+    },
   };
+
+  // -------------------------------------------------------
+  // 3. Prisma mocks
+  // -------------------------------------------------------
 
   const prismaMock = {
     followUp: {
       findFirst: vi.fn(),
       update: vi.fn(),
     },
+
     user: {
       findFirst: vi.fn(),
     },
+
     product: {
       findFirst: vi.fn(),
     },
   };
+
+  // -------------------------------------------------------
+  // 4. Scope service mocks
+  // -------------------------------------------------------
 
   const scopeMock = {
     isGlobal: vi.fn(),
@@ -56,9 +115,14 @@ describe('FollowUpsService general update security', () => {
   beforeEach(() => {
     vi.resetAllMocks();
 
-    scopeMock.isGlobal.mockReturnValue(true);
+    // Branch Manager is not a global administrator.
+    scopeMock.isGlobal.mockReturnValue(false);
 
-    prismaMock.followUp.findFirst.mockResolvedValue(followUp);
+    scopeMock.assertBranchAccess.mockResolvedValue(undefined);
+
+    prismaMock.followUp.findFirst.mockResolvedValue({
+      ...followUp,
+    });
 
     prismaMock.followUp.update.mockResolvedValue({
       ...followUp,
@@ -71,28 +135,44 @@ describe('FollowUpsService general update security', () => {
     );
   });
 
+  // -------------------------------------------------------
+  // TEST 1
+  // Ordinary update without reassignment
+  // -------------------------------------------------------
+
   it('allows ordinary updates without changing assignment', async () => {
     await expect(
       service.update(
         followUp.id,
-        { remarks: 'Updated remarks' },
+        {
+          remarks: 'Updated remarks',
+        },
         user,
       ),
     ).resolves.toMatchObject({
       remarks: 'Updated remarks',
     });
 
-    expect(prismaMock.followUp.update).toHaveBeenCalledOnce();
+    expect(
+      prismaMock.followUp.update,
+    ).toHaveBeenCalledOnce();
 
     const updateArgs =
       prismaMock.followUp.update.mock.calls[0]?.[0] as
-        | { data: Record<string, unknown> }
+        | {
+            data: Record<string, unknown>;
+          }
         | undefined;
 
-    expect(updateArgs?.data).not.toHaveProperty(
-      'assignedToUserId',
-    );
+    expect(
+      updateArgs?.data,
+    ).not.toHaveProperty('assignedToUserId');
   });
+
+  // -------------------------------------------------------
+  // TEST 2
+  // Accept active product
+  // -------------------------------------------------------
 
   it('accepts an active product during update', async () => {
     prismaMock.product.findFirst.mockResolvedValue({
@@ -102,22 +182,35 @@ describe('FollowUpsService general update security', () => {
     await expect(
       service.update(
         followUp.id,
-        { productId: 'product-active' },
+        {
+          productId: 'product-active',
+        },
         user,
       ),
     ).resolves.toBeDefined();
 
-    expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+    expect(
+      prismaMock.product.findFirst,
+    ).toHaveBeenCalledWith({
       where: {
         id: 'product-active',
         status: 'ACTIVE',
         deletedAt: null,
       },
-      select: { id: true },
+      select: {
+        id: true,
+      },
     });
 
-    expect(prismaMock.followUp.update).toHaveBeenCalledOnce();
+    expect(
+      prismaMock.followUp.update,
+    ).toHaveBeenCalledOnce();
   });
+
+  // -------------------------------------------------------
+  // TEST 3
+  // Reject inactive product
+  // -------------------------------------------------------
 
   it('rejects an inactive product during update', async () => {
     prismaMock.product.findFirst.mockResolvedValue(null);
@@ -125,22 +218,35 @@ describe('FollowUpsService general update security', () => {
     await expect(
       service.update(
         followUp.id,
-        { productId: 'product-inactive' },
+        {
+          productId: 'product-inactive',
+        },
         user,
       ),
     ).rejects.toThrow(NotFoundException);
 
-    expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+    expect(
+      prismaMock.product.findFirst,
+    ).toHaveBeenCalledWith({
       where: {
         id: 'product-inactive',
         status: 'ACTIVE',
         deletedAt: null,
       },
-      select: { id: true },
+      select: {
+        id: true,
+      },
     });
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------
+  // TEST 4
+  // Reject soft-deleted product
+  // -------------------------------------------------------
 
   it('rejects a soft-deleted product during update', async () => {
     prismaMock.product.findFirst.mockResolvedValue(null);
@@ -148,22 +254,35 @@ describe('FollowUpsService general update security', () => {
     await expect(
       service.update(
         followUp.id,
-        { productId: 'product-deleted' },
+        {
+          productId: 'product-deleted',
+        },
         user,
       ),
     ).rejects.toThrow(NotFoundException);
 
-    expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+    expect(
+      prismaMock.product.findFirst,
+    ).toHaveBeenCalledWith({
       where: {
         id: 'product-deleted',
         status: 'ACTIVE',
         deletedAt: null,
       },
-      select: { id: true },
+      select: {
+        id: true,
+      },
     });
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------
+  // TEST 5
+  // Reject nonexistent product
+  // -------------------------------------------------------
 
   it('rejects a nonexistent product during update', async () => {
     prismaMock.product.findFirst.mockResolvedValue(null);
@@ -171,51 +290,91 @@ describe('FollowUpsService general update security', () => {
     await expect(
       service.update(
         followUp.id,
-        { productId: 'product-missing' },
+        {
+          productId: 'product-missing',
+        },
         user,
       ),
     ).rejects.toThrow(NotFoundException);
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------
+  // TEST 6
+  // Update without product validation
+  // -------------------------------------------------------
 
   it('allows ordinary updates without product validation', async () => {
     await expect(
       service.update(
         followUp.id,
-        { remarks: 'Updated remarks' },
+        {
+          remarks: 'Updated remarks',
+        },
         user,
       ),
     ).resolves.toBeDefined();
 
-    expect(prismaMock.product.findFirst).not.toHaveBeenCalled();
-    expect(prismaMock.followUp.update).toHaveBeenCalledOnce();
+    expect(
+      prismaMock.product.findFirst,
+    ).not.toHaveBeenCalled();
+
+    expect(
+      prismaMock.followUp.update,
+    ).toHaveBeenCalledOnce();
   });
+
+  // -------------------------------------------------------
+  // TEST 7
+  // Reject changing assigned employee
+  // -------------------------------------------------------
+
   it('rejects changing the assigned employee', async () => {
     await expect(
       service.update(
         followUp.id,
-        { assignedToUserId: 'staff-2' },
+        {
+          assignedToUserId: 'staff-2',
+        } as unknown as UpdateFollowUpDto,
         user,
       ),
     ).rejects.toThrow(
       'Use the dedicated reassignment endpoint',
     );
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------
+  // TEST 8
+  // Reject assignment even when unchanged
+  // -------------------------------------------------------
 
   it('rejects assignment even when the value is unchanged', async () => {
     await expect(
       service.update(
         followUp.id,
-        { assignedToUserId: 'staff-1' },
+        {
+          assignedToUserId: 'staff-1',
+        } as unknown as UpdateFollowUpDto,
         user,
       ),
     ).rejects.toThrow(BadRequestException);
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------
+  // TEST 9
+  // Reject null assignment
+  // -------------------------------------------------------
 
   it('rejects assignment when explicitly set to null', async () => {
     await expect(
@@ -223,25 +382,41 @@ describe('FollowUpsService general update security', () => {
         followUp.id,
         {
           assignedToUserId: null,
-        } as unknown as Parameters<FollowUpsService['update']>[1],
+        } as unknown as UpdateFollowUpDto,
         user,
       ),
     ).rejects.toThrow(BadRequestException);
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------
+  // TEST 10
+  // Reject empty assignment
+  // -------------------------------------------------------
 
   it('rejects assignment when explicitly set to an empty string', async () => {
     await expect(
       service.update(
         followUp.id,
-        { assignedToUserId: '' },
+        {
+          assignedToUserId: '',
+        } as unknown as UpdateFollowUpDto,
         user,
       ),
     ).rejects.toThrow(BadRequestException);
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------
+  // TEST 11
+  // Reject disabled follow-up
+  // -------------------------------------------------------
 
   it('rejects updates to disabled follow-ups', async () => {
     prismaMock.followUp.findFirst.mockResolvedValue({
@@ -252,35 +427,113 @@ describe('FollowUpsService general update security', () => {
     await expect(
       service.update(
         followUp.id,
-        { remarks: 'Updated remarks' },
+        {
+          remarks: 'Updated remarks',
+        },
         user,
       ),
     ).rejects.toThrow(BadRequestException);
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
 
+  // -------------------------------------------------------
+  // TEST 12
+  // Reject manager from another branch
+  // -------------------------------------------------------
+
   it('rejects updates when branch access is denied', async () => {
+    const unauthorizedUser: AuthenticatedUser = {
+      ...user,
+
+      id: 'other-branch-manager',
+      username: 'other-branch-manager',
+
+      scopes: [
+        {
+          scopeType: 'BRANCH',
+          regionId: null,
+          districtId: null,
+          branchId: 'branch-b',
+        },
+      ],
+
+      roleAssignments: [
+        {
+          roleCode: 'BRANCH_MANAGER',
+          scopeType: 'BRANCH',
+          regionId: null,
+          districtId: null,
+          branchId: 'branch-b',
+          permissions: [
+            'followup.read',
+            'followup.update',
+          ],
+        },
+      ],
+    };
+
     prismaMock.followUp.findFirst.mockResolvedValue({
       ...followUp,
       assignedToUserId: 'another-staff',
       createdByUserId: 'another-creator',
     });
 
-    scopeMock.isGlobal.mockReturnValue(false);
+    await expect(
+      service.update(
+        followUp.id,
+        {
+          remarks: 'Unauthorized change',
+        },
+        unauthorizedUser,
+      ),
+    ).rejects.toThrow(ForbiddenException);
 
-    scopeMock.assertBranchAccess.mockRejectedValue(
-      new ForbiddenException('Access denied'),
-    );
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
+  });
+
+
+  it('rejects branch-scoped nonmanager access to another staff follow-up', async () => {
+    const unauthorizedUser: AuthenticatedUser = {
+      ...user,
+      id: 'staff-2',
+      username: 'staff-2',
+      roles: ['DIGITAL_RESKILLED_STAFF'],
+      permissions: ['followup.read', 'followup.update'],
+      roleAssignments: [
+        {
+          roleCode: 'DIGITAL_RESKILLED_STAFF',
+          scopeType: 'BRANCH',
+          regionId: null,
+          districtId: null,
+          branchId: 'branch-a',
+          permissions: ['followup.read', 'followup.update'],
+        },
+      ],
+    };
+
+    await expect(
+      service.findOne(followUp.id, unauthorizedUser),
+    ).rejects.toThrow(ForbiddenException);
 
     await expect(
       service.update(
         followUp.id,
-        { remarks: 'Updated remarks' },
-        user,
+        { remarks: 'Unauthorized change' },
+        unauthorizedUser,
       ),
     ).rejects.toThrow(ForbiddenException);
 
-    expect(prismaMock.followUp.update).not.toHaveBeenCalled();
+    expect(
+      prismaMock.followUp.update,
+    ).not.toHaveBeenCalled();
   });
+
+
+
+
 });

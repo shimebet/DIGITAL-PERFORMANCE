@@ -185,29 +185,37 @@ describe('SubmissionsController', () => {
     expect(result).toEqual(expected);
   });
 
-  it('approves a reviewed submission', async () => {
-    const user =
-      {} as Parameters<SubmissionsController['approve']>[1];
 
-    const expected = {
-      id: 'submission-1',
-      status: 'APPROVED',
-    };
+it('approves a reviewed submission with a justification', async () => {
+  const dto = {
+    reason: 'District-level approval following branch review',
+  };
 
-    submissionsServiceMock.approve.mockResolvedValue(expected);
+  const user =
+    {} as Parameters<SubmissionsController['approve']>[2];
 
-    const result = await controller.approve(
-      'submission-1',
-      user,
-    );
+  const expected = {
+    id: 'submission-1',
+    status: 'APPROVED',
+  };
 
-    expect(submissionsServiceMock.approve).toHaveBeenCalledWith(
-      'submission-1',
-      user,
-    );
+  submissionsServiceMock.approve.mockResolvedValue(expected);
 
-    expect(result).toEqual(expected);
-  });
+  const result = await controller.approve(
+    'submission-1',
+    dto,
+    user,
+  );
+
+  expect(submissionsServiceMock.approve).toHaveBeenCalledWith(
+    'submission-1',
+    user,
+    dto.reason,
+  );
+
+  expect(result).toEqual(expected);
+});
+
 
   it('returns a submission for correction with a reason', async () => {
     const dto = {

@@ -1,48 +1,65 @@
+
 import { ForbiddenException, Injectable } from '@nestjs/common';
 
 import type { AuthenticatedUser } from '../interfaces/authenticated-user.interface.js';
-
 import { PrismaService } from '../../../database/prisma/prisma.service.js';
 
 @Injectable()
 export class ScopeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ==========================================================================
+  // ============================================================
   // GLOBAL ACCESS
-  // ==========================================================================
+  // ============================================================
 
-isGlobal(
-  user: AuthenticatedUser | undefined | null,
-): boolean {
-  if (!user) {
-    return false;
+  isGlobal(user: AuthenticatedUser | undefined | null): boolean {
+    if (!user) {
+      return false;
+    }
+
+    return (
+      user.roleAssignments?.some(
+        (assignment) =>
+          assignment.scopeType === 'GLOBAL' &&
+          (assignment.roleCode === 'SUPER_ADMIN' ||
+            assignment.roleCode === 'SYSTEM_ADMIN'),
+      ) === true
+    );
   }
 
-  return (
-    user.roleAssignments?.some(
-      (assignment) =>
-        assignment.scopeType === 'GLOBAL' &&
-        (
-          assignment.roleCode === 'SUPER_ADMIN' ||
-          assignment.roleCode === 'SYSTEM_ADMIN'
-        ),
-    ) === true
-  );
-}
+  // ============================================================
+  // STAFF PROFILE ACCESS
+  //
+  // Only an exclusively assigned Digital Reskilled Staff
+  // account may use its staff profile as an access scope.
+  //
+  // Management and mixed-role accounts cannot gain additional
+  // organizational access through their staff profile.
+  // ============================================================
 
-  // ==========================================================================
-  // STAFF PROFILE HELPER
-  // ==========================================================================
+  private canUseStaffProfileScope(user: AuthenticatedUser): boolean {
+    return (
+      user.roles.length === 1 &&
+      user.roles[0] === 'DIGITAL_RESKILLED_STAFF' &&
+      user.roleAssignments?.some(
+        (assignment) =>
+          assignment.roleCode === 'DIGITAL_RESKILLED_STAFF' &&
+          assignment.scopeType === 'STAFF',
+      ) === true
+    );
+  }
 
   private async getStaffBranchId(
     user: AuthenticatedUser,
   ): Promise<string | null> {
+    if (!this.canUseStaffProfileScope(user)) {
+      return null;
+    }
+
     const staffProfile = await this.prisma.staffProfile.findUnique({
       where: {
         userId: user.id,
       },
-
       select: {
         branchId: true,
       },
@@ -51,19 +68,13 @@ isGlobal(
     return staffProfile?.branchId ?? null;
   }
 
-  // ==========================================================================
+  // ============================================================
   // REGION ACCESS
   //
-  // A region is accessible when:
-  //
-  // 1. User is GLOBAL
-  // 2. User has direct REGION scope
-  // 3. User has DISTRICT scope inside that region
-  // 4. User has BRANCH scope inside that region
-  // 5. Staff user's assigned branch belongs to that region
-  //
-  // Lower-level scopes are allowed to see their parent region as context.
-  // ==========================================================================
+  // A lower-level assignment can authorize access to its parent
+  // region as context. It does not grant access to all records
+  // inside that region.
+  // ============================================================
 
   async canAccessRegion(
     user: AuthenticatedUser,
@@ -73,39 +84,22 @@ isGlobal(
       return true;
     }
 
-    // ------------------------------------------------------------------------
-    // DIRECT REGION ACCESS
-    // ------------------------------------------------------------------------
-
-    const directRegionAccess = user.scopes.some(
-      (scope) => scope.scopeType === 'REGION' && scope.regionId === regionId,
-    );
-
-    if (directRegionAccess) {
+    // Direct regional assignment
+    if (this.getRegionIds(user).includes(regionId)) {
       return true;
     }
 
-    // ------------------------------------------------------------------------
-    // DISTRICT -> PARENT REGION
-    // ------------------------------------------------------------------------
-
+    // District assignment -> parent region
     const districtIds = this.getDistrictIds(user);
 
     if (districtIds.length > 0) {
       const district = await this.prisma.district.findFirst({
         where: {
-          id: {
-            in: districtIds,
-          },
-
+          id: { in: districtIds },
           regionId,
-
           deletedAt: null,
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
       if (district) {
@@ -113,31 +107,20 @@ isGlobal(
       }
     }
 
-    // ------------------------------------------------------------------------
-    // BRANCH -> DISTRICT -> PARENT REGION
-    // ------------------------------------------------------------------------
-
+    // Branch assignment -> parent region
     const branchIds = this.getBranchIds(user);
 
     if (branchIds.length > 0) {
       const branch = await this.prisma.branch.findFirst({
         where: {
-          id: {
-            in: branchIds,
-          },
-
+          id: { in: branchIds },
           deletedAt: null,
-
           district: {
             regionId,
-
             deletedAt: null,
           },
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
       if (branch) {
@@ -145,32 +128,23 @@ isGlobal(
       }
     }
 
-    // ------------------------------------------------------------------------
-    // STAFF -> BRANCH -> DISTRICT -> REGION
-    // ------------------------------------------------------------------------
-
+    // Digital Reskilled Staff -> own branch -> parent region
     const staffBranchId = await this.getStaffBranchId(user);
 
     if (staffBranchId) {
-      const staffBranch = await this.prisma.branch.findFirst({
+      const branch = await this.prisma.branch.findFirst({
         where: {
           id: staffBranchId,
-
           deletedAt: null,
-
           district: {
             regionId,
-
             deletedAt: null,
           },
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
-      if (staffBranch) {
+      if (branch) {
         return true;
       }
     }
@@ -178,17 +152,9 @@ isGlobal(
     return false;
   }
 
-  // ==========================================================================
+  // ============================================================
   // DISTRICT ACCESS
-  //
-  // A district is accessible when:
-  //
-  // 1. User is GLOBAL
-  // 2. User has direct DISTRICT scope
-  // 3. District belongs to user's REGION scope
-  // 4. User has BRANCH scope inside the district
-  // 5. Staff user's assigned branch belongs to the district
-  // ==========================================================================
+  // ============================================================
 
   async canAccessDistrict(
     user: AuthenticatedUser,
@@ -198,40 +164,22 @@ isGlobal(
       return true;
     }
 
-    // ------------------------------------------------------------------------
-    // DIRECT DISTRICT ACCESS
-    // ------------------------------------------------------------------------
-
-    const directDistrictAccess = user.scopes.some(
-      (scope) =>
-        scope.scopeType === 'DISTRICT' && scope.districtId === districtId,
-    );
-
-    if (directDistrictAccess) {
+    // Direct district assignment
+    if (this.getDistrictIds(user).includes(districtId)) {
       return true;
     }
 
-    // ------------------------------------------------------------------------
-    // REGION -> CHILD DISTRICT
-    // ------------------------------------------------------------------------
-
+    // Region assignment -> child district
     const regionIds = this.getRegionIds(user);
 
     if (regionIds.length > 0) {
       const district = await this.prisma.district.findFirst({
         where: {
           id: districtId,
-
-          regionId: {
-            in: regionIds,
-          },
-
+          regionId: { in: regionIds },
           deletedAt: null,
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
       if (district) {
@@ -239,27 +187,17 @@ isGlobal(
       }
     }
 
-    // ------------------------------------------------------------------------
-    // BRANCH -> PARENT DISTRICT
-    // ------------------------------------------------------------------------
-
+    // Branch assignment -> parent district
     const branchIds = this.getBranchIds(user);
 
     if (branchIds.length > 0) {
       const branch = await this.prisma.branch.findFirst({
         where: {
-          id: {
-            in: branchIds,
-          },
-
+          id: { in: branchIds },
           districtId,
-
           deletedAt: null,
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
       if (branch) {
@@ -267,28 +205,20 @@ isGlobal(
       }
     }
 
-    // ------------------------------------------------------------------------
-    // STAFF -> BRANCH -> DISTRICT
-    // ------------------------------------------------------------------------
-
+    // Digital Reskilled Staff -> own branch -> parent district
     const staffBranchId = await this.getStaffBranchId(user);
 
     if (staffBranchId) {
-      const staffBranch = await this.prisma.branch.findFirst({
+      const branch = await this.prisma.branch.findFirst({
         where: {
           id: staffBranchId,
-
           districtId,
-
           deletedAt: null,
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
-      if (staffBranch) {
+      if (branch) {
         return true;
       }
     }
@@ -296,17 +226,9 @@ isGlobal(
     return false;
   }
 
-  // ==========================================================================
+  // ============================================================
   // BRANCH ACCESS
-  //
-  // A branch is accessible when:
-  //
-  // 1. User is GLOBAL
-  // 2. User has direct BRANCH scope
-  // 3. Branch belongs to user's DISTRICT scope
-  // 4. Branch belongs to user's REGION scope
-  // 5. Branch is the staff user's own assigned branch
-  // ==========================================================================
+  // ============================================================
 
   async canAccessBranch(
     user: AuthenticatedUser,
@@ -316,39 +238,22 @@ isGlobal(
       return true;
     }
 
-    // ------------------------------------------------------------------------
-    // DIRECT BRANCH ACCESS
-    // ------------------------------------------------------------------------
-
-    const directBranchAccess = user.scopes.some(
-      (scope) => scope.scopeType === 'BRANCH' && scope.branchId === branchId,
-    );
-
-    if (directBranchAccess) {
+    // Direct branch assignment
+    if (this.getBranchIds(user).includes(branchId)) {
       return true;
     }
 
-    // ------------------------------------------------------------------------
-    // DISTRICT -> CHILD BRANCH
-    // ------------------------------------------------------------------------
-
+    // District assignment -> child branch
     const districtIds = this.getDistrictIds(user);
 
     if (districtIds.length > 0) {
       const branch = await this.prisma.branch.findFirst({
         where: {
           id: branchId,
-
-          districtId: {
-            in: districtIds,
-          },
-
+          districtId: { in: districtIds },
           deletedAt: null,
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
       if (branch) {
@@ -356,31 +261,20 @@ isGlobal(
       }
     }
 
-    // ------------------------------------------------------------------------
-    // REGION -> DISTRICT -> CHILD BRANCH
-    // ------------------------------------------------------------------------
-
+    // Region assignment -> child branch
     const regionIds = this.getRegionIds(user);
 
     if (regionIds.length > 0) {
       const branch = await this.prisma.branch.findFirst({
         where: {
           id: branchId,
-
           deletedAt: null,
-
           district: {
-            regionId: {
-              in: regionIds,
-            },
-
+            regionId: { in: regionIds },
             deletedAt: null,
           },
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
       if (branch) {
@@ -388,97 +282,93 @@ isGlobal(
       }
     }
 
-    // ------------------------------------------------------------------------
-    // STAFF -> OWN BRANCH
-    // ------------------------------------------------------------------------
-
+    // Digital Reskilled Staff -> own branch only
     const staffBranchId = await this.getStaffBranchId(user);
 
-    if (staffBranchId === branchId) {
-      return true;
-    }
-
-    return false;
+    return staffBranchId !== null && staffBranchId === branchId;
   }
 
-  // ==========================================================================
-  // ASSERT REGION
-  // ==========================================================================
+  // ============================================================
+  // ACCESS ASSERTIONS
+  // ============================================================
 
-  async assertRegionAccess(user: AuthenticatedUser, regionId: string) {
-    const allowed = await this.canAccessRegion(user, regionId);
-
-    if (!allowed) {
-      throw new ForbiddenException('You do not have access to this region');
-    }
-  }
-
-  // ==========================================================================
-  // ASSERT DISTRICT
-  // ==========================================================================
-
-  async assertDistrictAccess(user: AuthenticatedUser, districtId: string) {
-    const allowed = await this.canAccessDistrict(user, districtId);
-
-    if (!allowed) {
-      throw new ForbiddenException('You do not have access to this district');
+  async assertRegionAccess(
+    user: AuthenticatedUser,
+    regionId: string,
+  ): Promise<void> {
+    if (!(await this.canAccessRegion(user, regionId))) {
+      throw new ForbiddenException(
+        'You do not have access to this region',
+      );
     }
   }
 
-  // ==========================================================================
-  // ASSERT BRANCH
-  // ==========================================================================
-
-  async assertBranchAccess(user: AuthenticatedUser, branchId: string) {
-    const allowed = await this.canAccessBranch(user, branchId);
-
-    if (!allowed) {
-      throw new ForbiddenException('You do not have access to this branch');
+  async assertDistrictAccess(
+    user: AuthenticatedUser,
+    districtId: string,
+  ): Promise<void> {
+    if (!(await this.canAccessDistrict(user, districtId))) {
+      throw new ForbiddenException(
+        'You do not have access to this district',
+      );
     }
   }
 
-  // ==========================================================================
-  // DIRECT REGION IDS
+  async assertBranchAccess(
+    user: AuthenticatedUser,
+    branchId: string,
+  ): Promise<void> {
+    if (!(await this.canAccessBranch(user, branchId))) {
+      throw new ForbiddenException(
+        'You do not have access to this branch',
+      );
+    }
+  }
+
+  // ============================================================
+  // EXPLICIT ASSIGNMENT SCOPES
   //
-  // IMPORTANT:
-  // These return explicitly assigned scopes only.
-  //
-  // They do NOT return inferred parent regions.
-  // ==========================================================================
+  // These methods return only directly assigned scopes.
+  // They do not infer broader authority from parent IDs.
+  // ============================================================
 
   getRegionIds(user: AuthenticatedUser): string[] {
     return [
       ...new Set(
         user.scopes
-          .filter((scope) => scope.scopeType === 'REGION' && scope.regionId)
+          .filter(
+            (scope) =>
+              scope.scopeType === 'REGION' &&
+              Boolean(scope.regionId),
+          )
           .map((scope) => scope.regionId!),
       ),
     ];
   }
 
-  // ==========================================================================
-  // DIRECT DISTRICT IDS
-  // ==========================================================================
-
   getDistrictIds(user: AuthenticatedUser): string[] {
     return [
       ...new Set(
         user.scopes
-          .filter((scope) => scope.scopeType === 'DISTRICT' && scope.districtId)
+          .filter(
+            (scope) =>
+              scope.scopeType === 'DISTRICT' &&
+              Boolean(scope.districtId),
+          )
           .map((scope) => scope.districtId!),
       ),
     ];
   }
 
-  // ==========================================================================
-  // DIRECT BRANCH IDS
-  // ==========================================================================
-
   getBranchIds(user: AuthenticatedUser): string[] {
     return [
       ...new Set(
         user.scopes
-          .filter((scope) => scope.scopeType === 'BRANCH' && scope.branchId)
+          .filter(
+            (scope) =>
+              scope.scopeType === 'BRANCH' &&
+              Boolean(scope.branchId),
+          )
           .map((scope) => scope.branchId!),
       ),
     ];

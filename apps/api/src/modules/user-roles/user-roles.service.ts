@@ -19,13 +19,17 @@ import {
 export class UserRolesService {
   constructor(
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   // ============================================================
   // ASSIGN USER ROLE
   // ============================================================
 
-  async assign(dto: AssignUserRoleDto) {
+  
+  async assign(
+  dto: AssignUserRoleDto,
+  actorId?: string,
+) {
     const user = await this.prisma.user.findFirst({
       where: {
         id: dto.userId,
@@ -48,51 +52,270 @@ export class UserRolesService {
       throw new NotFoundException('Role not found');
     }
 
+    // Validate the requested role and organizational scope
+    // before changing any existing assignments.
+    this.validateRoleScope(role.code, dto.scopeType);
     await this.validateScope(dto);
+if (role.code === 'DIGITAL_RESKILLED_STAFF') {
+  if (!dto.staffBranchId) {
+    throw new BadRequestException(
+      'A staff branch must be selected for Digital Reskilled Staff',
+    );
+  }
 
-    const existing = await this.prisma.userRole.findFirst({
-      where: {
-        userId: dto.userId,
-        roleId: dto.roleId,
-        scopeType: dto.scopeType,
-        regionId: dto.regionId ?? null,
-        districtId: dto.districtId ?? null,
-        branchId: dto.branchId ?? null,
+  const staffBranch = await this.prisma.branch.findFirst({
+    where: {
+      id: dto.staffBranchId,
+      deletedAt: null,
+      status: 'ACTIVE',
+    },
+  });
+
+  if (!staffBranch) {
+    throw new NotFoundException(
+      'Selected staff branch is not active or does not exist',
+    );
+  }
+} else if (dto.staffBranchId) {
+  throw new BadRequestException(
+    'staffBranchId is only allowed for Digital Reskilled Staff',
+  );
+}
+    return this.prisma.$transaction(
+      async (tx) => {
+        const currentAssignments =
+          await tx.userRole.findMany({
+            where: {
+              userId: dto.userId,
+            },
+            include: {
+              role: {
+                select: {
+                  code: true,
+                },
+              },
+            },
+          });
+
+        const alreadyExact =
+          currentAssignments.length === 1 &&
+          currentAssignments[0].roleId === dto.roleId &&
+          currentAssignments[0].scopeType === dto.scopeType &&
+          currentAssignments[0].regionId ===
+            (dto.regionId ?? null) &&
+          currentAssignments[0].districtId ===
+            (dto.districtId ?? null) &&
+          currentAssignments[0].branchId ===
+            (dto.branchId ?? null);
+
+        if (alreadyExact) {
+          throw new ConflictException(
+            'User already has this role for the selected scope',
+          );
+        }
+
+        const administratorRoles = [
+          'SUPER_ADMIN',
+          'SYSTEM_ADMIN',
+        ];
+
+        const removingGlobalAdmin =
+          currentAssignments.some(
+            (assignment) =>
+              assignment.scopeType === 'GLOBAL' &&
+              administratorRoles.includes(
+                assignment.role.code,
+              ),
+          ) &&
+          !(
+            dto.scopeType === 'GLOBAL' &&
+            administratorRoles.includes(role.code)
+          );
+
+        if (
+          removingGlobalAdmin &&
+          user.status === 'ACTIVE'
+        ) {
+          const otherActiveGlobalAdmins =
+            await tx.user.count({
+              where: {
+                id: {
+                  not: dto.userId,
+                },
+                status: 'ACTIVE',
+                deletedAt: null,
+                roles: {
+                  some: {
+                    scopeType: 'GLOBAL',
+                    role: {
+                      code: {
+                        in: administratorRoles,
+                      },
+                    },
+                  },
+                },
+              },
+            });
+
+          if (otherActiveGlobalAdmins === 0) {
+            throw new ForbiddenException(
+              'Cannot replace the last active global administrator',
+            );
+          }
+        }
+
+        // Remove previous role assignments and create the
+        // replacement within the same transaction.
+        await tx.userRole.deleteMany({
+          where: {
+            userId: dto.userId,
+          },
+        });
+
+        const assignment = await tx.userRole.create({
+          data: {
+            userId: dto.userId,
+            roleId: dto.roleId,
+            scopeType: dto.scopeType,
+            regionId: dto.regionId,
+            districtId: dto.districtId,
+            branchId: dto.branchId,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+            role: true,
+            region: true,
+            district: true,
+            branch: true,
+          },
+        });
+if (role.code === 'DIGITAL_RESKILLED_STAFF') {
+  await tx.staffProfile.upsert({
+    where: {
+      userId: dto.userId,
+    },
+    update: {
+      branchId: dto.staffBranchId!,
+      digitalReskilled: true,
+      status: 'ACTIVE',
+    },
+    create: {
+      userId: dto.userId,
+      branchId: dto.staffBranchId!,
+      digitalReskilled: true,
+      status: 'ACTIVE',
+    },
+  });
+}
+        const now = new Date();
+
+        // Revoke existing sessions so the user must
+        // authenticate again with the new role.
+        await tx.refreshToken.updateMany({
+          where: {
+            userId: dto.userId,
+            revokedAt: null,
+          },
+          data: {
+            revokedAt: now,
+          },
+        });
+
+        await tx.userSession.updateMany({
+          where: {
+            userId: dto.userId,
+            status: 'ACTIVE',
+          },
+          data: {
+            status: 'REVOKED',
+            revokedAt: now,
+          },
+        });
+
+
+await tx.auditLog.create({
+  data: {
+    // Administrator who performed the role change
+    userId: actorId ?? null,
+
+    action: 'UPDATE',
+    module: 'USER_ROLES',
+    entityType: 'User',
+    entityId: dto.userId,
+
+    description: 'User role assignments replaced',
+
+    // Preserve the previous role assignments
+    oldValue: {
+      assignments: currentAssignments.map(
+        (previous) => ({
+          roleCode: previous.role.code,
+          scopeType: previous.scopeType,
+          regionId: previous.regionId,
+          districtId: previous.districtId,
+          branchId: previous.branchId,
+        }),
+      ),
+    },
+
+    // Record the new role and staff branch
+    newValue: {
+      roleCode: role.code,
+      scopeType: dto.scopeType,
+      regionId: dto.regionId ?? null,
+      districtId: dto.districtId ?? null,
+      branchId: dto.branchId ?? null,
+      staffBranchId: dto.staffBranchId ?? null,
+    },
+  },
+});
+
+
+        return assignment;
       },
-    });
+      {
+        isolationLevel: 'Serializable',
+      },
+    );
+  }
 
-    if (existing) {
-      throw new ConflictException(
-        'User already has this role for the selected scope',
+  private validateRoleScope(
+    roleCode: string,
+    scopeType: string,
+  ): void {
+    const requiredScopes: Record<string, string> = {
+      SUPER_ADMIN: 'GLOBAL',
+      SYSTEM_ADMIN: 'GLOBAL',
+      REGIONAL_MANAGER: 'REGION',
+      REGIONAL_ANALYST: 'REGION',
+      DISTRICT_MANAGER: 'DISTRICT',
+      DISTRICT_ANALYST: 'DISTRICT',
+      BRANCH_MANAGER: 'BRANCH',
+      DIGITAL_RESKILLED_STAFF: 'STAFF',
+      AUDITOR: 'GLOBAL',
+    };
+
+    const requiredScope = requiredScopes[roleCode];
+
+    if (!requiredScope) {
+      throw new BadRequestException(
+        `Role ${roleCode} has no approved scope policy`,
       );
     }
 
-    return this.prisma.userRole.create({
-      data: {
-        userId: dto.userId,
-        roleId: dto.roleId,
-        scopeType: dto.scopeType,
-        regionId: dto.regionId,
-        districtId: dto.districtId,
-        branchId: dto.branchId,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        role: true,
-        region: true,
-        district: true,
-        branch: true,
-      },
-    });
+    if (scopeType !== requiredScope) {
+      throw new BadRequestException(
+        `Role ${roleCode} requires ${requiredScope} scope`,
+      );
+    }
   }
-
   // ============================================================
   // VALIDATE ORGANIZATIONAL SCOPE
   // ============================================================

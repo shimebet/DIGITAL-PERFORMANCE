@@ -1,3 +1,4 @@
+
 import {
   IsEnum,
   IsNumber,
@@ -16,6 +17,12 @@ export class AssignTargetDto {
 
   @IsEnum(ScopeType)
   scopeType: ScopeType;
+
+  // Parent allocation from the immediately higher organizational level.
+  // Optional during the compatibility phase for existing assignments.
+  @IsOptional()
+  @IsUUID()
+  parentAssignmentId?: string;
 
   @IsOptional()
   @IsUUID()

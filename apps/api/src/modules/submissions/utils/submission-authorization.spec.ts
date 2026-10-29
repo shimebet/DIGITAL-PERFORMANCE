@@ -1,3 +1,4 @@
+
 import { describe, expect, it } from 'vitest';
 
 import type {
@@ -63,7 +64,11 @@ describe('canManageSubmission', () => {
     }]);
 
     expect(
-      canManageSubmission(user, 'submission.approve', organization),
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
     ).toBe(true);
   });
 
@@ -76,7 +81,11 @@ describe('canManageSubmission', () => {
     }]);
 
     expect(
-      canManageSubmission(user, 'submission.approve', organization),
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
     ).toBe(false);
   });
 
@@ -89,8 +98,46 @@ describe('canManageSubmission', () => {
     }]);
 
     expect(
-      canManageSubmission(user, 'submission.review', organization),
+      canManageSubmission(
+        user,
+        'submission.review',
+        organization,
+      ),
     ).toBe(true);
+  });
+
+  it('allows district approval within its assigned district', () => {
+    const user = makeUser([{
+      roleCode: 'DISTRICT_MANAGER',
+      scopeType: 'DISTRICT',
+      districtId: 'district-a',
+      permissions: ['submission.approve'],
+    }]);
+
+    expect(
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
+    ).toBe(true);
+  });
+
+  it('denies district approval outside its assigned district', () => {
+    const user = makeUser([{
+      roleCode: 'DISTRICT_MANAGER',
+      scopeType: 'DISTRICT',
+      districtId: 'district-b',
+      permissions: ['submission.approve'],
+    }]);
+
+    expect(
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
+    ).toBe(false);
   });
 
   it('allows regional approval within its region', () => {
@@ -102,8 +149,29 @@ describe('canManageSubmission', () => {
     }]);
 
     expect(
-      canManageSubmission(user, 'submission.approve', organization),
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
     ).toBe(true);
+  });
+
+  it('denies regional approval outside its assigned region', () => {
+    const user = makeUser([{
+      roleCode: 'REGIONAL_MANAGER',
+      scopeType: 'REGION',
+      regionId: 'region-b',
+      permissions: ['submission.approve'],
+    }]);
+
+    expect(
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
+    ).toBe(false);
   });
 
   it('denies cross-role permission and scope mixing', () => {
@@ -123,7 +191,11 @@ describe('canManageSubmission', () => {
     ]);
 
     expect(
-      canManageSubmission(user, 'submission.approve', organization),
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
     ).toBe(false);
   });
 
@@ -135,7 +207,11 @@ describe('canManageSubmission', () => {
     }]);
 
     expect(
-      canManageSubmission(user, 'submission.approve', organization),
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
     ).toBe(false);
   });
 
@@ -148,7 +224,11 @@ describe('canManageSubmission', () => {
     }]);
 
     expect(
-      canManageSubmission(user, 'submission.review', organization),
+      canManageSubmission(
+        user,
+        'submission.review',
+        organization,
+      ),
     ).toBe(false);
   });
 
@@ -160,7 +240,11 @@ describe('canManageSubmission', () => {
     }]);
 
     expect(
-      canManageSubmission(user, 'submission.approve', organization),
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
     ).toBe(true);
   });
 
@@ -172,7 +256,11 @@ describe('canManageSubmission', () => {
     }]);
 
     expect(
-      canManageSubmission(user, 'submission.approve', organization),
+      canManageSubmission(
+        user,
+        'submission.approve',
+        organization,
+      ),
     ).toBe(false);
   });
 });

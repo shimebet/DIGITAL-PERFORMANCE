@@ -1,6 +1,8 @@
+
 import {
   IsEmail,
   IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -10,6 +12,14 @@ import {
 import { UserStatus } from '../../../generated/prisma/enums.js';
 
 export class UpdateUserDto {
+  // Username editing is restricted to global SUPER_ADMIN
+  // by the authorization check in users.controller.ts.
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  username?: string;
+
   @IsOptional()
   @IsEmail()
   @MaxLength(191)

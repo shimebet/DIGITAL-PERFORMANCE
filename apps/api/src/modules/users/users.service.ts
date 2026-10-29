@@ -21,7 +21,7 @@ const ADMIN_ROLE_CODES = [
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   // ============================================================
   // CREATE USER
@@ -68,17 +68,17 @@ export class UsersService {
 
         ...(dto.branchId
           ? {
-              staffProfile: {
-                create: {
-                  branchId: dto.branchId,
-                  employeeNumber:
-                    dto.employeeNumber?.trim(),
-                  jobTitle: dto.jobTitle?.trim(),
-                  digitalReskilled:
-                    dto.digitalReskilled ?? true,
-                },
+            staffProfile: {
+              create: {
+                branchId: dto.branchId,
+                employeeNumber:
+                  dto.employeeNumber?.trim(),
+                jobTitle: dto.jobTitle?.trim(),
+                digitalReskilled:
+                  dto.digitalReskilled ?? true,
               },
-            }
+            },
+          }
           : {}),
       },
 
@@ -329,6 +329,7 @@ export class UsersService {
   // UPDATE USER
   // ============================================================
 
+  
   async update(
     id: string,
     dto: UpdateUserDto,
@@ -338,123 +339,185 @@ export class UsersService {
       await this.ensureBranchExists(dto.branchId);
     }
 
-    await this.prisma.$transaction(
-      async (tx) => {
-        const existing = await tx.user.findFirst({
-          where: {
-            id,
-            deletedAt: null,
-          },
-        });
+    try {
+      await this.prisma.$transaction(
+        async (tx) => {
+          const existing = await tx.user.findFirst({
+            where: {
+              id,
+              deletedAt: null,
+            },
+          });
 
-        if (!existing) {
-          throw new NotFoundException('User not found');
-        }
+          if (!existing) {
+            throw new NotFoundException('User not found');
+          }
 
-        const statusChanged =
-          dto.status !== undefined &&
-          dto.status !== existing.status;
+          const updatedUsername =
+            dto.username === undefined
+              ? existing.username
+              : dto.username.trim().toLowerCase();
 
-        const restrictingAccess =
-          statusChanged &&
-          dto.status !== 'ACTIVE';
-
-        if (restrictingAccess) {
-          if (actorId === id) {
-            throw new ForbiddenException(
-              'You cannot deactivate, lock, or suspend your own account',
+          if (!updatedUsername) {
+            throw new ConflictException(
+              'Username cannot be empty',
             );
           }
 
-          if (existing.status === 'ACTIVE') {
-            await this.protectLastGlobalAdmin(tx, id);
+          const usernameChanged =
+            updatedUsername !== existing.username;
+
+          if (usernameChanged) {
+            const duplicate = await tx.user.findFirst({
+              where: {
+                username: updatedUsername,
+                id: { not: id },
+              },
+              select: {
+                id: true,
+              },
+            });
+
+            if (duplicate) {
+              throw new ConflictException(
+                'Username already exists',
+              );
+            }
           }
-        }
 
-        await tx.user.update({
-          where: {
-            id,
-          },
-          data: {
-            email:
-              dto.email?.trim().toLowerCase(),
-            phone:
-              dto.phone?.trim(),
-            firstName:
-              dto.firstName?.trim(),
-            middleName:
-              dto.middleName?.trim(),
-            lastName:
-              dto.lastName?.trim(),
-            status:
-              dto.status,
+          const statusChanged =
+            dto.status !== undefined &&
+            dto.status !== existing.status;
 
-            ...(dto.status === 'ACTIVE'
-              ? {
-                  failedLoginAttempts: 0,
-                  lockedUntil: null,
-                }
-              : {}),
-          },
-        });
+          const restrictingAccess =
+            statusChanged &&
+            dto.status !== 'ACTIVE';
 
-        if (dto.branchId) {
-          await tx.staffProfile.upsert({
+          if (restrictingAccess) {
+            if (actorId === id) {
+              throw new ForbiddenException(
+                'You cannot deactivate, lock, or suspend your own account',
+              );
+            }
+
+            if (existing.status === 'ACTIVE') {
+              await this.protectLastGlobalAdmin(tx, id);
+            }
+          }
+
+          await tx.user.update({
             where: {
-              userId: id,
+              id,
             },
-            update: {
-              branchId: dto.branchId,
-              employeeNumber:
-                dto.employeeNumber?.trim(),
-              jobTitle:
-                dto.jobTitle?.trim(),
-            },
-            create: {
-              userId: id,
-              branchId: dto.branchId,
-              employeeNumber:
-                dto.employeeNumber?.trim(),
-              jobTitle:
-                dto.jobTitle?.trim(),
+            data: {
+              username: usernameChanged
+                ? updatedUsername
+                : undefined,
+              email: dto.email?.trim().toLowerCase(),
+              phone: dto.phone?.trim(),
+              firstName: dto.firstName?.trim(),
+              middleName: dto.middleName?.trim(),
+              lastName: dto.lastName?.trim(),
+              status: dto.status,
+
+              ...(dto.status === 'ACTIVE'
+                ? {
+                    failedLoginAttempts: 0,
+                    lockedUntil: null,
+                  }
+                : {}),
             },
           });
-        }
 
-        if (restrictingAccess) {
-          await this.revokeUserSessions(
-            tx,
-            id,
-            new Date(),
-          );
-        }
+          // Preserve the existing staff-profile update behavior.
+          if (dto.branchId) {
+            await tx.staffProfile.upsert({
+              where: {
+                userId: id,
+              },
+              update: {
+                branchId: dto.branchId,
+                employeeNumber:
+                  dto.employeeNumber?.trim(),
+                jobTitle:
+                  dto.jobTitle?.trim(),
+              },
+              create: {
+                userId: id,
+                branchId: dto.branchId,
+                employeeNumber:
+                  dto.employeeNumber?.trim(),
+                jobTitle:
+                  dto.jobTitle?.trim(),
+              },
+            });
+          }
 
-        await tx.auditLog.create({
-          data: {
-            userId: actorId ?? null,
-            action: 'UPDATE',
-            module: 'USERS',
-            entityType: 'User',
-            entityId: id,
-            description: statusChanged
-              ? `User account status changed from ${existing.status} to ${dto.status}`
-              : 'User account profile updated',
-            oldValue: {
-              status: existing.status,
+          // A username change requires the user to sign in again.
+          if (restrictingAccess || usernameChanged) {
+            await this.revokeUserSessions(
+              tx,
+              id,
+              new Date(),
+            );
+          }
+
+          let description = 'User account profile updated';
+
+          if (usernameChanged && statusChanged) {
+            description =
+              'User account username and status changed';
+          } else if (usernameChanged) {
+            description =
+              'User account username changed';
+          } else if (statusChanged) {
+            description =
+              `User account status changed from ${existing.status} to ${dto.status}`;
+          }
+
+          await tx.auditLog.create({
+            data: {
+              userId: actorId ?? null,
+              action: 'UPDATE',
+              module: 'USERS',
+              entityType: 'User',
+              entityId: id,
+              description,
+              oldValue: {
+                username: existing.username,
+                status: existing.status,
+              },
+              newValue: {
+                username: updatedUsername,
+                status: dto.status ?? existing.status,
+              },
             },
-            newValue: {
-              status: dto.status ?? existing.status,
-            },
-          },
-        });
-      },
-      {
-        isolationLevel: 'Serializable',
-      },
-    );
+          });
+        },
+        {
+          isolationLevel: 'Serializable',
+        },
+      );
+    } catch (error: unknown) {
+      // Prisma unique-constraint violations can occur even
+      // after a duplicate check when requests are concurrent.
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Username or another unique field already exists',
+        );
+      }
+
+      throw error;
+    }
 
     return this.findOne(id);
   }
+
 
   // ============================================================
   // SOFT DELETE USER

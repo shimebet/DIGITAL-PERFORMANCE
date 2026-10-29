@@ -63,6 +63,14 @@ export class PrismaService
       configService.getOrThrow<string>(
         'DATABASE_NAME',
       );
+      if (
+  nodeEnv === 'test' &&
+  database !== 'digital_performance_test'
+) {
+  throw new Error(
+    'Test environment must use digital_performance_test',
+  );
+}
 
     const connectionLimit = Number(
       configService.get<string>(

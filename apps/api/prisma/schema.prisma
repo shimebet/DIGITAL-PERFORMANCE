@@ -545,34 +545,29 @@ model Target {
 }
 
 model TargetAssignment {
-  id String @id @default(uuid()) @db.Char(36)
+  id          String    @id @default(uuid()) @db.Char(36)
+  targetId    String    @db.Char(36)
+  scopeType   ScopeType
+  regionId    String?   @db.Char(36)
+  districtId  String?   @db.Char(36)
+  branchId    String?   @db.Char(36)
+  userId      String?   @db.Char(36)
+  productId   String?   @db.Char(36)
+  targetValue Decimal   @db.Decimal(18, 2)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  targetId String @db.Char(36)
+  parentAssignmentId String? @db.Char(36)
 
-  scopeType ScopeType
-
-  regionId   String? @db.Char(36)
-  districtId String? @db.Char(36)
-  branchId   String? @db.Char(36)
-  userId     String? @db.Char(36)
-  productId  String? @db.Char(36)
-
-  targetValue Decimal @db.Decimal(18, 2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  target Target @relation(fields: [targetId], references: [id], onDelete: Cascade)
-
-  region Region? @relation(fields: [regionId], references: [id], onDelete: Cascade)
-
+  target   Target    @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  region   Region?   @relation(fields: [regionId], references: [id], onDelete: Cascade)
   district District? @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product  Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
-
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  parentAssignment TargetAssignment?  @relation("TargetAssignmentHierarchy", fields: [parentAssignmentId], references: [id], onDelete: Restrict)
+  childAssignments TargetAssignment[] @relation("TargetAssignmentHierarchy")
 
   @@index([targetId])
   @@index([regionId])
@@ -581,6 +576,7 @@ model TargetAssignment {
   @@index([userId])
   @@index([productId])
   @@index([scopeType])
+  @@index([parentAssignmentId])
   @@map("target_assignments")
 }
 

@@ -93,7 +93,17 @@ const rolePermissions: Record<string, readonly string[]> = {
   DISTRICT_MANAGER: managers,
   DISTRICT_ANALYST: analysts,
   BRANCH_MANAGER: managers,
-  DIGITAL_RESKILLED_STAFF: [...refRead,'activity.create','activity.read','activity.update','submission.read','submission.submit','followup.create','followup.read','followup.update','alert.read'],
+  DIGITAL_RESKILLED_STAFF: [
+  ...refRead,
+  'activity.create',
+  'activity.read',
+  'activity.update',
+  'submission.read',
+  'submission.submit',
+  'followup.read',
+  'followup.update',
+  'alert.read',
+],
   AUDITOR: ['dashboard.read','region.read','district.read','branch.read','user.read','role.read','permission.read','product.read','target.read','activity.read','submission.read','followup.read','report.read','report.export','alert.read','ai.read','audit.read','settings.read'],
   READ_ONLY: [...refRead,...operationsRead],
 };

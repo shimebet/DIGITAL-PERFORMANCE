@@ -13,6 +13,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Permissions } from '../auth/decorators/permissions.decorator.js';
 
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
+import { ApproveSubmissionDto } from './dto/approve-submission.dto.js';
 
 @Controller('submissions')
 export class SubmissionsController {
@@ -134,18 +135,24 @@ export class SubmissionsController {
   // ==========================================================================
   // MANAGER APPROVAL
   // ==========================================================================
+@Post(':id/approve')
+@Permissions('submission.approve')
+approve(
+  @Param('id')
+  id: string,
 
-  @Post(':id/approve')
-  @Permissions('submission.approve')
-  approve(
-    @Param('id')
-    id: string,
+  @Body()
+  dto: ApproveSubmissionDto,
 
-    @CurrentUser()
-    user: AuthenticatedUser,
-  ) {
-    return this.submissionsService.approve(id, user);
-  }
+  @CurrentUser()
+  user: AuthenticatedUser,
+) {
+  return this.submissionsService.approve(
+    id,
+    user,
+    dto?.reason,
+  );
+}
 
   // ==========================================================================
   // RETURN FOR CORRECTION
