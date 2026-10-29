@@ -1,20 +1,30 @@
-import { getUsersApi } from "./users.api";
+import { apiClient } from "./api-client";
+import { API_ENDPOINTS } from "./endpoints";
 
-import type { User } from "../types/user.types";
+export interface FollowUpStaffOption {
+  id: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  status: string;
 
-export async function getFollowUpStaffApi(): Promise<User[]> {
-  const users = await getUsersApi();
+  staffProfile: {
+    branchId: string;
+    status: string;
+    branch: {
+      name: string;
+    };
+  } | null;
+}
 
-  return users
-    .filter(
-      (user) =>
-        user.status === "ACTIVE" &&
-        user.staffProfile?.status === "ACTIVE" &&
-        Boolean(user.staffProfile?.branchId),
-    )
-    .sort((a, b) =>
-      `${a.firstName} ${a.lastName}`.localeCompare(
-        `${b.firstName} ${b.lastName}`,
-      ),
-    );
+export async function getFollowUpStaffApi(): Promise<
+  FollowUpStaffOption[]
+> {
+  const response = await apiClient.get<
+    FollowUpStaffOption[]
+  >(
+    `${API_ENDPOINTS.followUps}/eligible-staff`,
+  );
+
+  return response.data;
 }

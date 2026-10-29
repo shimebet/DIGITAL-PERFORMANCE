@@ -1,0 +1,416 @@
+
+import { useState } from "react";
+import axios from "axios";
+
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  List,
+  ListItem,
+  Stack,
+  Typography,
+} from "@mui/material";
+
+import {
+  CloudUploadOutlined,
+  DownloadOutlined,
+} from "@mui/icons-material";
+
+import {
+  confirmTargetImport,
+  downloadTargetImportTemplate,
+  previewTargetImport,
+  type TargetImportPreview,
+} from "../../api/targets-import.api";
+
+interface TargetImportDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onImported: (message: string) => Promise<void>;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data;
+
+    if (typeof data?.message === "string") {
+      return data.message;
+    }
+
+    if (Array.isArray(data?.message)) {
+      return data.message.join(", ");
+    }
+
+    return error.message || "Request failed.";
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "An unexpected error occurred.";
+}
+
+export function TargetImportDialog({
+  open,
+  onClose,
+  onImported,
+}: TargetImportDialogProps) {
+  const [file, setFile] = useState<File | null>(null);
+
+  const [preview, setPreview] =
+    useState<TargetImportPreview | null>(null);
+
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [completed, setCompleted] = useState(false);
+
+  function reset() {
+    setFile(null);
+    setPreview(null);
+    setError(null);
+    setCompleted(false);
+  }
+
+  function close() {
+    if (busy) return;
+
+    reset();
+    onClose();
+  }
+
+  function selectFile(selected: File | null) {
+    reset();
+
+    if (!selected) return;
+
+    if (!selected.name.toLowerCase().endsWith(".csv")) {
+      setError("Please select a CSV file.");
+      return;
+    }
+
+    if (selected.size === 0) {
+      setError("The selected CSV file is empty.");
+      return;
+    }
+
+    if (selected.size > 1024 * 1024) {
+      setError("CSV files must not exceed 1 MB.");
+      return;
+    }
+
+    setFile(selected);
+  }
+
+  async function handleDownloadTemplate() {
+    setError(null);
+
+    try {
+      await downloadTargetImportTemplate();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handlePreview() {
+    if (!file || busy) return;
+
+    setBusy(true);
+    setError(null);
+    setPreview(null);
+
+    try {
+      const result = await previewTargetImport(file);
+      setPreview(result);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirm() {
+    if (
+      !file ||
+      !preview?.valid ||
+      preview.totalRows === 0 ||
+      busy ||
+      completed
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const result = await confirmTargetImport(file);
+
+      if (!result.success) {
+        throw new Error(
+          result.message || "Target import was unsuccessful.",
+        );
+      }
+
+      setCompleted(true);
+
+      // The database transaction has completed successfully.
+      // A refresh failure should not cause a second import.
+      try {
+        await onImported(result.message);
+      } catch {
+        setError(
+          "Import succeeded, but the target list could not be refreshed. " +
+          "Close this dialog and refresh the page. Do not import the same file again.",
+        );
+        return;
+      }
+
+      reset();
+      onClose();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : close}
+      fullWidth
+      maxWidth="md"
+    >
+      <DialogTitle>
+        Import Target Assignments from CSV
+      </DialogTitle>
+
+      <DialogContent dividers>
+        <Stack spacing={3}>
+          <Alert severity="info">
+            Import assignments into existing targets.
+            Preview validates the CSV before saving.
+            Confirmation imports the assignments as a batch.
+          </Alert>
+
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600}>
+              Step 1 - Download CSV template
+            </Typography>
+
+            <Button
+              sx={{ mt: 1 }}
+              variant="outlined"
+              startIcon={<DownloadOutlined />}
+              onClick={() => void handleDownloadTemplate()}
+              disabled={busy}
+            >
+              Download Template
+            </Button>
+
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 1 }}
+            >
+              Use existing target and organization UUIDs.
+              Non-GLOBAL assignments require a valid
+              parentAssignmentId.
+            </Typography>
+          </Box>
+
+          <Divider />
+
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600}>
+              Step 2 - Select CSV file
+            </Typography>
+
+            <Button
+              sx={{ mt: 1 }}
+              variant="outlined"
+              component="label"
+              startIcon={<CloudUploadOutlined />}
+              disabled={busy}
+            >
+              Choose CSV File
+
+              <input
+                hidden
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => {
+                  selectFile(event.target.files?.[0] ?? null);
+                  event.target.value = "";
+                }}
+              />
+            </Button>
+
+            {file && (
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                Selected: {file.name}
+                {" "}({(file.size / 1024).toFixed(1)} KB)
+              </Typography>
+            )}
+          </Box>
+
+          <Divider />
+
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600}>
+              Step 3 - Validate and preview
+            </Typography>
+
+            <Button
+              sx={{ mt: 1 }}
+              variant="contained"
+              onClick={() => void handlePreview()}
+              disabled={!file || busy || completed}
+            >
+              {busy && !preview
+                ? "Validating..."
+                : "Preview CSV"}
+            </Button>
+          </Box>
+
+          {busy && (
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <CircularProgress size={28} />
+            </Box>
+          )}
+
+          {error && (
+            <Alert severity="error">
+              {error}
+            </Alert>
+          )}
+
+          {preview && (
+            <Box>
+              <Alert
+                severity={preview.valid ? "success" : "error"}
+                sx={{ mb: 2 }}
+              >
+                {preview.valid
+                  ? "CSV validation passed. Review the summary before importing."
+                  : "CSV validation failed. Correct the errors and preview again."}
+              </Alert>
+
+              <Typography variant="h6" gutterBottom>
+                Import Preview
+              </Typography>
+
+              <Stack spacing={0.75}>
+                <Typography>
+                  CSV rows: {preview.totalRows}
+                </Typography>
+
+                <Typography>
+                  Valid rows: {preview.validRows}
+                </Typography>
+
+                <Divider sx={{ my: 1 }} />
+
+                <Typography>
+                  Global assignments: {preview.summary.global}
+                </Typography>
+
+                <Typography>
+                  Regional assignments: {preview.summary.region}
+                </Typography>
+
+                <Typography>
+                  District assignments: {preview.summary.district}
+                </Typography>
+
+                <Typography>
+                  Branch assignments: {preview.summary.branch}
+                </Typography>
+
+                <Typography>
+                  Staff assignments: {preview.summary.staff}
+                </Typography>
+
+                <Typography fontWeight={600}>
+                  Total target value:{" "}
+                  {preview.summary.totalTargetValue.toLocaleString()}
+                </Typography>
+              </Stack>
+
+              {preview.errors.length > 0 && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography
+                    variant="subtitle1"
+                    color="error"
+                    fontWeight={600}
+                  >
+                    Validation Errors ({preview.errors.length})
+                  </Typography>
+
+                  <List dense>
+                    {preview.errors.map((item, index) => (
+                      <ListItem key={index}>
+                        <Typography variant="body2">
+                          {item.row > 0
+                            ? `Row ${item.row}: `
+                            : ""}
+                          {item.field
+                            ? `${item.field}: `
+                            : ""}
+                          {item.message}
+                        </Typography>
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {completed && (
+            <Alert severity="success">
+              Import completed. Do not submit the same CSV again.
+            </Alert>
+          )}
+        </Stack>
+      </DialogContent>
+
+      <DialogActions sx={{ p: 2 }}>
+        <Button
+          onClick={close}
+          disabled={busy}
+        >
+          {completed ? "Close" : "Cancel"}
+        </Button>
+
+        <Button
+          variant="contained"
+          color="success"
+          disabled={
+            busy ||
+            !file ||
+            !preview?.valid ||
+            preview.totalRows === 0 ||
+            completed
+          }
+          onClick={() => void handleConfirm()}
+        >
+          {busy && preview?.valid
+            ? "Importing..."
+            : "Confirm Import"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

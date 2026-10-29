@@ -41,6 +41,7 @@ interface UserFormDialogProps {
   open: boolean;
   user: User | null;
   saving: boolean;
+  canEditUsername: boolean;
   onClose: () => void;
   onSave: (
     payload: CreateUserPayload | UpdateUserPayload,
@@ -105,6 +106,7 @@ export function UserFormDialog({
   saving,
   onClose,
   onSave,
+  canEditUsername,
 }: UserFormDialogProps) {
   const [form, setForm] = useState<UserForm>(() =>
     user
@@ -195,7 +197,7 @@ export function UserFormDialog({
       return;
     }
 
-    if (!user && !form.username.trim()) {
+    if (!form.username.trim()) {
       setError("Username is required.");
       return;
     }
@@ -247,7 +249,12 @@ export function UserFormDialog({
         phone: phone || undefined,
         status: form.status,
       };
-
+if (
+  canEditUsername &&
+  form.username.trim().toLowerCase() !== user.username
+) {
+  payload.username = form.username.trim();
+}
       if (form.branchId) {
         payload.branchId = form.branchId;
         payload.employeeNumber =
@@ -315,16 +322,21 @@ export function UserFormDialog({
             </Alert>
           )}
 
-          <TextField
-            label="Username"
-            required
-            fullWidth
-            disabled={Boolean(user)}
-            value={form.username}
-            onChange={(event) =>
-              updateForm("username", event.target.value)
-            }
-          />
+<TextField
+  label="Username"
+  required
+  fullWidth
+  disabled={Boolean(user) && !canEditUsername}
+  value={form.username}
+  onChange={(event) =>
+    updateForm("username", event.target.value)
+  }
+  helperText={
+    user && canEditUsername
+      ? "Changing the username will require this user to sign in again."
+      : undefined
+  }
+/>
 
           {!user && (
             <TextField

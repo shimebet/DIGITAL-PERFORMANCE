@@ -1,17 +1,19 @@
+
 import { useState } from "react";
+import type { FormEvent } from "react";
 import axios from "axios";
 
 import {
   Alert,
   Box,
   Button,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   MenuItem,
   TextField,
+  Typography,
 } from "@mui/material";
 
 import type {
@@ -22,7 +24,7 @@ import type {
 
 interface Props {
   open: boolean;
-  followUp: FollowUp | null;
+  followUp: FollowUp;
   onClose: () => void;
   onSubmit: (
     id: string,
@@ -41,23 +43,17 @@ const statuses: FollowUpStatus[] = [
   "CLOSED",
 ];
 
-function errorMessage(error: unknown): string {
+function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message;
-
     if (Array.isArray(message)) return message.join(", ");
     if (typeof message === "string") return message;
-
     return error.message;
   }
 
   return error instanceof Error
     ? error.message
     : "Unable to update follow-up status.";
-}
-
-function toDateInput(value: string | null | undefined) {
-  return value ? value.slice(0, 10) : "";
 }
 
 export function FollowUpStatusDialog({
@@ -68,41 +64,42 @@ export function FollowUpStatusDialog({
   submitting,
 }: Props) {
   const [status, setStatus] = useState<FollowUpStatus>(
-    () => followUp?.status ?? "OPEN",
+    followUp.status,
   );
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState(
-    () => followUp?.outcome ?? "",
+    followUp.outcome ?? "",
   );
-  const [nextFollowUpDate, setNextFollowUpDate] = useState(
-    () => toDateInput(followUp?.nextFollowUpDate),
-  );
+  const [nextFollowUpDate, setNextFollowUpDate] =
+    useState(
+      followUp.nextFollowUpDate?.slice(0, 10) ?? "",
+    );
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
-    if (!followUp) return;
-
     if (status === "RESCHEDULED" && !nextFollowUpDate) {
-      setError("Next follow-up date is required when rescheduling.");
+      setError("Next follow-up date is required.");
       return;
     }
 
     const payload: UpdateFollowUpStatusRequest = {
       status,
-      ...(note.trim() ? { note: note.trim() } : {}),
-      ...(outcome.trim() ? { outcome: outcome.trim() } : {}),
-      ...(nextFollowUpDate
-        ? { nextFollowUpDate }
-        : {}),
     };
+
+    if (note.trim()) payload.note = note.trim();
+    if (outcome.trim()) payload.outcome = outcome.trim();
+
+    if (status === "RESCHEDULED") {
+      payload.nextFollowUpDate = nextFollowUpDate;
+    }
 
     try {
       await onSubmit(followUp.id, payload);
     } catch (submissionError) {
-      setError(errorMessage(submissionError));
+      setError(getErrorMessage(submissionError));
     }
   }
 
@@ -115,34 +112,34 @@ export function FollowUpStatusDialog({
       fullWidth
       maxWidth="sm"
     >
-      <Box component="form" onSubmit={submit}>
+      <Box component="form" onSubmit={handleSubmit}>
         <DialogTitle>Update Follow-up Status</DialogTitle>
 
         <DialogContent>
           <Box sx={{ display: "grid", gap: 2, pt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
 
-            <TextField
-              label="Customer"
-              value={
-                followUp?.customerNameMasked ||
-                followUp?.customerReference ||
-                "N/A"
-              }
-              fullWidth
-              disabled
-            />
+            <Typography variant="body2" color="text.secondary">
+              Customer:{" "}
+              {followUp.customerNameMasked ||
+                followUp.customerReference ||
+                "N/A"}
+            </Typography>
+
+            <Typography variant="body2">
+              Current status: {followUp.status.replaceAll("_", " ")}
+            </Typography>
 
             <TextField
               select
-              required
-              label="Status"
+              label="New Status"
               value={status}
               onChange={(event) =>
                 setStatus(event.target.value as FollowUpStatus)
               }
-              fullWidth
               disabled={submitting}
+              required
+              fullWidth
             >
               {statuses.map((value) => (
                 <MenuItem key={value} value={value}>
@@ -152,20 +149,22 @@ export function FollowUpStatusDialog({
             </TextField>
 
             {status === "RESCHEDULED" && (
-              <TextField
-                required
-                label="Next Follow-up Date"
-                type="date"
-                value={nextFollowUpDate}
-                onChange={(event) =>
-                  setNextFollowUpDate(event.target.value)
-                }
-                slotProps={{
-                  inputLabel: { shrink: true },
-                }}
-                fullWidth
-                disabled={submitting}
-              />
+<TextField
+  label="Next Follow-up Date"
+  type="date"
+  value={nextFollowUpDate}
+  onChange={(event) =>
+    setNextFollowUpDate(event.target.value)
+  }
+  slotProps={{
+    inputLabel: {
+      shrink: true,
+    },
+  }}
+  required
+  disabled={submitting}
+  fullWidth
+/>
             )}
 
             <TextField
@@ -176,9 +175,8 @@ export function FollowUpStatusDialog({
               }
               multiline
               minRows={2}
-              fullWidth
               disabled={submitting}
-              helperText="Describe the customer contact result or conversion outcome."
+              fullWidth
             />
 
             <TextField
@@ -189,32 +187,24 @@ export function FollowUpStatusDialog({
               }
               multiline
               minRows={2}
-              fullWidth
               disabled={submitting}
-              helperText="This note will be recorded in follow-up history."
+              fullWidth
+              helperText="Reason or explanation for the status change."
             />
           </Box>
         </DialogContent>
 
-        <DialogActions sx={{ p: 2 }}>
-          <Button
-            onClick={onClose}
-            disabled={submitting}
-          >
+        <DialogActions>
+          <Button onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
 
           <Button
             type="submit"
             variant="contained"
-            disabled={submitting || !followUp}
-            startIcon={
-              submitting
-                ? <CircularProgress size={16} />
-                : undefined
-            }
+            disabled={submitting || status === followUp.status}
           >
-            {submitting ? "Updating..." : "Update Status"}
+            {submitting ? "Saving..." : "Update Status"}
           </Button>
         </DialogActions>
       </Box>

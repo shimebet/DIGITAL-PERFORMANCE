@@ -40,17 +40,48 @@ export const API_ENDPOINTS = {
   products:
     '/products',
 
-  targets:
-    '/targets',
 
-  targetAssignments:
-    '/targets/assignments',
+targets:
+  '/targets',
 
-  activities:
-    '/activities',
+targetAssignments:
+  '/targets/assignments',
 
-  myActivities:
-    '/activities/mine',
+// TARGET CSV IMPORT
+targetImport: {
+  template:
+    '/targets/import/template',
+
+  preview:
+    '/targets/import/preview',
+
+  confirm:
+    '/targets/import/confirm',
+    
+  targetBulkImport: {
+  template: '/targets/bulk-import/template',
+  preview: '/targets/bulk-import/preview',
+  confirm: '/targets/bulk-import/confirm',
+},
+},
+
+activities:
+  '/activities',
+
+
+myActivities:
+  '/activities/mine',
+
+activityImport: {
+  template:
+    '/activities/import/template',
+
+  preview:
+    '/activities/import/preview',
+
+  confirm:
+    '/activities/import/confirm',
+},
 
   submissions:
     '/submissions',

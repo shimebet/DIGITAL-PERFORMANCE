@@ -18,6 +18,7 @@ import {
   ArrowBackOutlined,
   EditOutlined,
   RefreshOutlined,
+  UploadFileOutlined,
 } from "@mui/icons-material";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -31,6 +32,7 @@ import {
 } from "../api/activities.api";
 
 import { ActivityFormDialog } from "../components/activities/activity-form-dialog";
+import { ActivityImportDialog } from "../components/activities/activity-import-dialog";
 
 import { ActivityTable } from "../components/activities/activity-table";
 
@@ -153,7 +155,38 @@ export function ActivitiesPage() {
   // ==========================================================================
 
   const [dialogOpen, setDialogOpen] = useState(false);
+const [importDialogOpen, setImportDialogOpen] = useState(false);
 
+async function handleImportSuccess() {
+  await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: ["activities", "mine"],
+    }),
+
+    queryClient.invalidateQueries({
+      queryKey: ["submissions"],
+    }),
+
+    queryClient.invalidateQueries({
+      queryKey: ["dashboard-overview"],
+    }),
+
+    queryClient.invalidateQueries({
+      queryKey: ["dashboard-trend"],
+    }),
+
+    queryClient.invalidateQueries({
+      queryKey: ["dashboard-products"],
+    }),
+
+    queryClient.invalidateQueries({
+      queryKey: ["dashboard-branches"],
+    }),
+  ]);
+
+  setSuccessMessage("CSV activities imported successfully.");
+  setActionError(null);
+}
   const [dialogMode, setDialogMode] = useState<DialogMode>("create");
 
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(
@@ -563,15 +596,31 @@ function openEdit(activity: Activity) {
           </Typography>
         </Box>
 
-        {!isCorrectionMode && canCreate && (
-          <Button
-            variant="contained"
-            startIcon={<AddOutlined />}
-            onClick={openCreate}
-          >
-            Add Activity
-          </Button>
-        )}
+ {!isCorrectionMode && canCreate && (
+  <Box
+    sx={{
+      display: "flex",
+      gap: 1,
+      flexWrap: "wrap",
+    }}
+  >
+    <Button
+      variant="outlined"
+      startIcon={<UploadFileOutlined />}
+      onClick={() => setImportDialogOpen(true)}
+    >
+      Import CSV
+    </Button>
+
+    <Button
+      variant="contained"
+      startIcon={<AddOutlined />}
+      onClick={openCreate}
+    >
+      Add Activity
+    </Button>
+  </Box>
+)}
       </Box>
 
       {/* =====================================================================
@@ -991,7 +1040,11 @@ function openEdit(activity: Activity) {
       {/* =====================================================================
           CREATE / VIEW / EDIT DIALOG
       ===================================================================== */}
-
+<ActivityImportDialog
+  open={importDialogOpen}
+  onClose={() => setImportDialogOpen(false)}
+  onImported={handleImportSuccess}
+/>
       {dialogOpen && (
         <ActivityFormDialog
           open={dialogOpen}

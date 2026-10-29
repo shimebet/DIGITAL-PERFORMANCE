@@ -75,13 +75,21 @@ export async function reviewSubmissionApi(id: string) {
   return response.data;
 }
 
-export async function approveSubmissionApi(id: string) {
+
+export async function approveSubmissionApi(
+  id: string,
+  reason?: string,
+) {
   const response = await apiClient.post<DailySubmission>(
     `${API_ENDPOINTS.submissions}/${id}/approve`,
+    {
+      reason,
+    },
   );
 
   return response.data;
 }
+
 
 export async function returnSubmissionApi(
   id: string,

@@ -355,14 +355,20 @@ export function SubmissionsPage() {
   // APPROVE
   // ==========================================================================
 
-  const approveMutation = useMutation({
-    mutationFn: (id: string) => approveSubmissionApi(id),
+ const approveMutation = useMutation({
+  mutationFn: ({
+    id,
+    reason,
+  }: {
+    id: string;
+    reason?: string;
+  }) => approveSubmissionApi(id, reason),
 
-    onMutate: (id) => {
-      clearMessages();
+onMutate: ({ id }) => {
+  clearMessages();
 
-      setProcessingId(id);
-    },
+  setProcessingId(id);
+},
 
     onSuccess: async () => {
       setSuccessMessage("Submission approved successfully.");
@@ -503,17 +509,65 @@ export function SubmissionsPage() {
     await reviewMutation.mutateAsync(submission.id);
   }
 
-  async function approveSubmission(submission: DailySubmission) {
-    clearMessages();
 
-    const confirmed = window.confirm("Approve this submission?");
+async function approveSubmission(submission: DailySubmission) {
+  clearMessages();
 
-    if (!confirmed) {
+  const assignments = user?.roleAssignments ?? [];
+
+  const hasBranchManagerRole = assignments.some(
+    (assignment) =>
+      assignment.roleCode === "BRANCH_MANAGER" &&
+      assignment.scopeType === "BRANCH" &&
+      assignment.branchId === submission.branchId,
+  );
+
+  const hasExceptionalManagerRole = assignments.some(
+    (assignment) =>
+      (assignment.roleCode === "DISTRICT_MANAGER" &&
+        assignment.scopeType === "DISTRICT") ||
+      (assignment.roleCode === "REGIONAL_MANAGER" &&
+        assignment.scopeType === "REGION"),
+  );
+
+  const shouldPromptForReason =
+    !hasBranchManagerRole && hasExceptionalManagerRole;
+
+  let reason: string | undefined;
+
+  if (shouldPromptForReason) {
+    const enteredReason = window.prompt(
+      "Enter a written justification for this approval:",
+    );
+
+    if (enteredReason === null) {
       return;
     }
 
-    await approveMutation.mutateAsync(submission.id);
+    reason = enteredReason.trim();
+
+    if (!reason) {
+      setActionError(
+        "A written justification is required for district or regional manager approval.",
+      );
+      return;
+    }
   }
+
+  const confirmed = window.confirm(
+    "Approve this submission?",
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  await approveMutation.mutateAsync({
+    id: submission.id,
+    reason,
+  });
+}
+
 
   function openReturnDialog(submission: DailySubmission) {
     clearMessages();

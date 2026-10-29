@@ -73,6 +73,7 @@ export interface CreateUserPayload {
 }
 
 export interface UpdateUserPayload {
+  username?: string;
   firstName?: string;
   middleName?: string;
   lastName?: string;

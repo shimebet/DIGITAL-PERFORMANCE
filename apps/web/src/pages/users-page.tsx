@@ -212,6 +212,7 @@ export function UsersPage() {
       </CardContent>
     </Card>
 
+
     {dialogOpen && (
       <UserFormDialog
         open={dialogOpen}
@@ -219,8 +220,17 @@ export function UsersPage() {
         saving={saveMutation.isPending}
         onClose={closeDialog}
         onSave={handleSave}
+        canEditUsername={
+          canUpdate &&
+          (currentUser?.roleAssignments?.some(
+            (assignment) =>
+              assignment.roleCode === "SUPER_ADMIN" &&
+              assignment.scopeType === "GLOBAL",
+          ) ?? false)
+        }
       />
     )}
+
     {rolesUser && (
       <ManageUserRolesDialog
         open={true}

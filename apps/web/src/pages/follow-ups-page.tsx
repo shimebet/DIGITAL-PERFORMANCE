@@ -55,12 +55,14 @@ import {
   disableFollowUpApi,
   deleteFollowUpApi,
   reassignFollowUpApi,
+  updateFollowUpStatusApi,
 } from "../api/follow-ups.api";
 
 import type {
   CreateFollowUpRequest,
   UpdateFollowUpRequest,
   ReassignFollowUpRequest,
+  UpdateFollowUpStatusRequest,
 } from "../types/follow-up.types";
 
 import type {
@@ -68,6 +70,11 @@ import type {
   FollowUpPriority,
   FollowUpStatus,
 } from "../types/follow-up.types";
+import { FollowUpStatusDialog } from "../components/follow-ups/follow-up-status-dialog";
+
+
+
+
 
 const statuses: Array<FollowUpStatus | "ALL"> = [
   "ALL",
@@ -280,7 +287,34 @@ export function FollowUpsPage() {
     setEditingFollowUp(null);
     setSuccessMessage("Follow-up updated successfully.");
   }
+const [statusFollowUp, setStatusFollowUp] =
+  useState<FollowUp | null>(null);
 
+const statusMutation = useMutation({
+  mutationFn: ({
+    id,
+    payload,
+  }: {
+    id: string;
+    payload: UpdateFollowUpStatusRequest;
+  }) => updateFollowUpStatusApi(id, payload),
+
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["follow-ups"],
+    });
+  },
+});
+
+async function handleStatusUpdate(
+  id: string,
+  payload: UpdateFollowUpStatusRequest,
+) {
+  await statusMutation.mutateAsync({ id, payload });
+
+  setStatusFollowUp(null);
+  setSuccessMessage("Follow-up status updated successfully.");
+}
   const [reassigningFollowUp, setReassigningFollowUp] =
     useState<FollowUp | null>(null);
 
@@ -637,6 +671,20 @@ export function FollowUpsPage() {
                                 Edit
                               </Button>
                             )}
+                            {canUpdate && item.isEnabled && !item.deletedAt && (
+  <Button
+    size="small"
+    variant="contained"
+    color="primary"
+    disabled={statusMutation.isPending}
+    onClick={() => {
+      setSuccessMessage(null);
+      setStatusFollowUp(item);
+    }}
+  >
+    Update Status
+  </Button>
+)}
 
                             {canReassign && item.isEnabled && !item.deletedAt && (
                               <Button
@@ -822,7 +870,18 @@ export function FollowUpsPage() {
           onSubmit={handleCreate}
           submitting={createMutation.isPending}
         />
+        
       )}
+      {canUpdate && statusFollowUp !== null && (
+  <FollowUpStatusDialog
+    key={statusFollowUp.id}
+    open={true}
+    followUp={statusFollowUp}
+    onClose={() => setStatusFollowUp(null)}
+    onSubmit={handleStatusUpdate}
+    submitting={statusMutation.isPending}
+  />
+)}
     </Box>
   );
 }

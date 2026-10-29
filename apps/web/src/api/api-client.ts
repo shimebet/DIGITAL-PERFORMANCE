@@ -40,10 +40,10 @@ export const apiClient =
     timeout:
       30_000,
 
-    headers: {
-      'Content-Type':
-        'application/json',
-    },
+    // headers: {
+    //   'Content-Type':
+    //     'application/json',
+    // },
   });
 
 // ============================================================================
