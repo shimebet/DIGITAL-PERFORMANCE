@@ -38,7 +38,7 @@ export const apiClient =
       API_URL,
 
     timeout:
-      30_000,
+      60_000,
 
     // headers: {
     //   'Content-Type':
@@ -155,7 +155,7 @@ async function refreshSession() {
             },
 
             timeout:
-              30_000,
+              60_000,
           },
         )
         .then(
