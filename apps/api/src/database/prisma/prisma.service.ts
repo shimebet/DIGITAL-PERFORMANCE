@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import {
   Injectable,
   Logger,
@@ -98,20 +100,34 @@ export class PrismaService
       );
     }
 
-    const adapter = new PrismaMariaDb({
-      host,
-      port,
-      user,
-      password,
-      database,
-      connectionLimit,
+const adapter = new PrismaMariaDb({
+  host,
+  port,
+  user,
+  password,
+  database,
+  connectionLimit,
 
-      // Required by the current local development
-      // MySQL authentication configuration.
-      // Disabled by default in production.
-      allowPublicKeyRetrieval:
-        !isProduction,
-    });
+  // Require an encrypted, certificate-verified
+  // database connection in production.
+...(isProduction
+  ? {
+      ssl: {
+        ca: readFileSync(
+          configService.getOrThrow<string>(
+            'DATABASE_SSL_CA_PATH',
+          ),
+          'utf8',
+        ),
+        rejectUnauthorized: true,
+      },
+    }
+  : {}),
+
+  // Preserve existing local development behavior.
+  allowPublicKeyRetrieval:
+    !isProduction,
+});
 
     super({
       adapter,

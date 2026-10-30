@@ -1,4 +1,5 @@
-﻿import {
+﻿
+import {
   Logger,
   ValidationPipe,
 } from '@nestjs/common';
@@ -20,11 +21,38 @@ import {
 } from './app.module.js';
 
 async function bootstrap() {
-  process.loadEnvFile('.env');
+  // ============================================================
+  // LOGGER
+  // ============================================================
+
   const logger = new Logger('Bootstrap');
+
+  // ============================================================
+  // ENVIRONMENT CONFIGURATION
+  // ============================================================
+
+  // In local development, load environment variables from .env.
+  // On Render, environment variables are supplied by the platform,
+  // so a local .env file is not required.
+
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      process.loadEnvFile('.env');
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code !== 'ENOENT'
+      ) {
+        throw error;
+      }
+    }
+  }
 
   const isProduction =
     process.env.NODE_ENV === 'production';
+
+  // ============================================================
+  // SERVER CONFIGURATION
+  // ============================================================
 
   const port = Number(
     process.env.PORT ?? 3000,
@@ -44,23 +72,27 @@ async function bootstrap() {
     );
   }
 
-const app = await NestFactory.create(
-  AppModule,
-);
+  // ============================================================
+  // CREATE NESTJS APPLICATION
+  // ============================================================
 
-// ============================================================
-// GRACEFUL SHUTDOWN
-// ============================================================
+  const app = await NestFactory.create(
+    AppModule,
+  );
 
-app.enableShutdownHooks();
+  // ============================================================
+  // GRACEFUL SHUTDOWN
+  // ============================================================
 
-// ============================================================
-// SECURITY HEADERS
-// ============================================================
+  app.enableShutdownHooks();
 
-app.use(helmet());
+  // ============================================================
+  // SECURITY HEADERS
+  // ============================================================
 
-app.use(cookieParser());
+  app.use(helmet());
+
+  app.use(cookieParser());
 
   // ============================================================
   // CORS
@@ -174,10 +206,14 @@ app.use(cookieParser());
 
   if (enableSwagger) {
     logger.log(
-      `Swagger enabled at /api/docs`,
+      'Swagger enabled at /api/docs',
     );
   }
 }
+
+// ============================================================
+// APPLICATION STARTUP ERROR HANDLING
+// ============================================================
 
 void bootstrap().catch((error: unknown) => {
   const logger = new Logger('Bootstrap');
@@ -191,4 +227,3 @@ void bootstrap().catch((error: unknown) => {
 
   process.exitCode = 1;
 });
-
