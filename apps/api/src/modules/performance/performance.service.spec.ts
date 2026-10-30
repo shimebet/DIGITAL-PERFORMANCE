@@ -18,14 +18,24 @@ import type {
 describe('PerformanceService', () => {
   let service: PerformanceService;
 
-  const prismaMock = {
-    activityProduct: {
-      findMany: vi.fn(),
-    },
-    staffProfile: {
-      findUnique: vi.fn(),
-    },
-  };
+const prismaMock = {
+  activity: {
+    findMany: vi.fn(),
+  },
+  activityProduct: {
+    findMany: vi.fn(),
+  },
+  staffProfile: {
+    findUnique: vi.fn(),
+  },
+  user: {
+    findUnique: vi.fn(),
+  },
+  targetAssignment: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+  },
+};
 
   const scopeServiceMock = {
     assertRegionAccess: vi.fn(),
@@ -95,11 +105,20 @@ describe('PerformanceService', () => {
     scopeServiceMock.getBranchIds.mockReturnValue([]);
 
     prismaMock.activityProduct.findMany.mockResolvedValue([]);
-
+    prismaMock.activity.findMany.mockResolvedValue([]);
     service = new PerformanceService(
       prismaMock as unknown as PrismaService,
       scopeServiceMock as unknown as ScopeService,
     );
+    prismaMock.user.findUnique.mockResolvedValue({
+  id: 'staff-1',
+  staffProfile: {
+    branchId: 'branch-1',
+  },
+});
+
+prismaMock.targetAssignment.findFirst.mockResolvedValue(null);
+prismaMock.targetAssignment.findMany.mockResolvedValue([]);
   });
 
   // ============================================================
@@ -342,4 +361,65 @@ describe('PerformanceService', () => {
       }),
     );
   });
+
+
+  // ============================================================
+  // APPROVED-ONLY PERFORMANCE REGRESSION TESTS
+  // ============================================================
+
+  it('includes only approved submissions in summary queries', async () => {
+    prismaMock.activity.findMany.mockResolvedValue([]);
+
+    await service.summary(makeQuery(), makeUser());
+
+    expect(prismaMock.activity.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          submission: {
+            is: {
+              status: 'APPROVED',
+            },
+          },
+        }),
+      }),
+    );
+  });
+
+  it('includes only approved submissions in daily trends', async () => {
+    prismaMock.activity.findMany.mockResolvedValue([]);
+
+    await service.dailyTrend(makeQuery(), makeUser());
+
+    expect(prismaMock.activity.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          submission: {
+            is: {
+              status: 'APPROVED',
+            },
+          },
+        }),
+      }),
+    );
+  });
+
+  it('includes only approved submissions in product comparisons', async () => {
+    await service.productComparison(makeQuery(), makeUser());
+
+    expect(prismaMock.activityProduct.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          activity: expect.objectContaining({
+            submission: {
+              is: {
+                status: 'APPROVED',
+              },
+            },
+          }),
+        }),
+      }),
+    );
+  });
+
+  
 });

@@ -261,21 +261,21 @@ describe('UsersService - Security', () => {
         actorId,
       );
 
-      expect(tx.auditLog.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          userId: actorId,
-          action: 'UPDATE',
-          module: 'USERS',
-          entityType: 'User',
-          entityId: targetId,
-          oldValue: {
-            status: 'ACTIVE',
-          },
-          newValue: {
-            status: 'LOCKED',
-          },
-        }),
-      });
+expect(tx.auditLog.create).toHaveBeenCalledWith({
+  data: expect.objectContaining({
+    userId: actorId,
+    action: 'UPDATE',
+    module: 'USERS',
+    entityType: 'User',
+    entityId: targetId,
+    oldValue: expect.objectContaining({
+      status: 'ACTIVE',
+    }),
+    newValue: expect.objectContaining({
+      status: 'LOCKED',
+    }),
+  }),
+});
     });
   });
 

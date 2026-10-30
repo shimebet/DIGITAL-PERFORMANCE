@@ -312,13 +312,15 @@ private getDateRange(query: PerformanceQueryDto) {
            * users remain restricted to
            * their authorized scope.
            */
-          ...scopeFilter,
+           ...scopeFilter,
+
+          // Official performance includes approved submissions only.
+          submission: {
+            is: {
+              status: 'APPROVED',
+            },
+          },
         },
-        submission: {
-  is: {
-    status: 'APPROVED',
-  },
-},
       },
       include: {
         product: true,

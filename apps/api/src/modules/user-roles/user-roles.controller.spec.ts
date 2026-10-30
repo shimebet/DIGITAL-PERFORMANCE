@@ -124,7 +124,10 @@ describe('UserRolesController', () => {
 
     const result = await controller.assign(dto, adminRequest);
 
-    expect(serviceMock.assign).toHaveBeenCalledWith(dto);
+  expect(serviceMock.assign).toHaveBeenCalledWith(
+  dto,
+  'admin-1',
+);
     expect(result).toEqual(expected);
   });
 
@@ -220,7 +223,10 @@ describe('UserRolesController', () => {
       serviceMock.assign.mockResolvedValue(expected);
 
       await expect(controller.assign(dto, systemAdminRequest)).resolves.toEqual(expected);
-      expect(serviceMock.assign).toHaveBeenCalledWith(dto);
+    expect(serviceMock.assign).toHaveBeenCalledWith(
+  dto,
+  'admin-1',
+);
     });
   });
 });
