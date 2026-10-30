@@ -62,3 +62,47 @@ apps/api/src/generated/prisma/
 # Miscellaneous
 *.swp
 *.swo
+# Allow production environment examples
+!**/.env.*.example
+
+# Allow production environment examples
+
+# Local runtime logs and service files
+/runtime/
+
+# Local development backups
+*.bak
+*.before-runtime-config.txt
+
+# Production deployment secrets
+/deployment/production/*.env
+/deployment/production/*.env.*
+!/deployment/production/*.env.example
+!/deployment/production/*.env.*.example
+
+/apps/api/uat-initial-credentials.json
+
+# ==================================================
+# LOCAL SENSITIVE DATA - NEVER COMMIT
+# ==================================================
+
+/private/
+/backups/
+/imports/
+
+# Local credential exports
+*credentials*.csv
+*passwords*.csv
+*credentials*.json
+
+# Database backup files
+*.sql.gz
+*.dump
+*.backup
+
+# Local development and generated backup copies
+*.before-*.ts
+*.backup-*
+
+# Aiven database TLS certificate (managed separately on Render)
+/apps/api/certs/
