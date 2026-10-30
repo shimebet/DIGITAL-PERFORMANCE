@@ -8,9 +8,9 @@ export const appTheme =
       mode: 'light',
 
       primary: {
-        main: '#0B6B45',
-        dark: '#074A30',
-        light: '#E8F4EE',
+        main: '#800080',
+        dark: '#600060',
+        light: '#F3E5F5',
       },
 
       secondary: {

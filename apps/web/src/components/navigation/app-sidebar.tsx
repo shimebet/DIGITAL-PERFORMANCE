@@ -73,7 +73,7 @@ export function AppSidebar() {
 
         flexDirection: "column",
 
-        bgcolor: "#0B4F36",
+        bgcolor: "primary.main",
 
         color: "#FFFFFF",
       }}
