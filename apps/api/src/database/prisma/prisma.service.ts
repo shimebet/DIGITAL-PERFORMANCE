@@ -108,25 +108,28 @@ const adapter = new PrismaMariaDb({
   database,
   connectionLimit,
 
+  // Allow additional time for remote Aiven connections.
+  connectTimeout: 15_000,
+  acquireTimeout: 30_000,
+
   // Require an encrypted, certificate-verified
   // database connection in production.
-...(isProduction
-  ? {
-      ssl: {
-        ca: readFileSync(
-          configService.getOrThrow<string>(
-            'DATABASE_SSL_CA_PATH',
+  ...(isProduction
+    ? {
+        ssl: {
+          ca: readFileSync(
+            configService.getOrThrow<string>(
+              'DATABASE_SSL_CA_PATH',
+            ),
+            'utf8',
           ),
-          'utf8',
-        ),
-        rejectUnauthorized: true,
-      },
-    }
-  : {}),
+          rejectUnauthorized: true,
+        },
+      }
+    : {}),
 
   // Preserve existing local development behavior.
-  allowPublicKeyRetrieval:
-    !isProduction,
+  allowPublicKeyRetrieval: !isProduction,
 });
 
     super({
