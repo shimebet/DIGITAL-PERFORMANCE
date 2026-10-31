@@ -32,8 +32,7 @@ async function bootstrap() {
   // ============================================================
 
   // In local development, load environment variables from .env.
-  // On Render, environment variables are supplied by the platform,
-  // so a local .env file is not required.
+  // On Render, environment variables are supplied by the platform.
 
   if (process.env.NODE_ENV !== 'production') {
     try {
@@ -95,35 +94,97 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // ============================================================
-  // CORS
+  // CORS - WEBSITE AND CAPACITOR ANDROID
   // ============================================================
+
+  // Website origins are configured in Render using CORS_ORIGINS.
+  // Multiple origins must be separated by commas.
+  //
+  // Example:
+  // CORS_ORIGINS=https://dpmp-web.onrender.com
+  //
+  // Android uses the same production API, but its Capacitor
+  // WebView normally has the origin https://localhost.
 
   const configuredOrigins =
     process.env.CORS_ORIGINS ??
     'http://localhost:5173';
 
-  const allowedOrigins =
-    configuredOrigins
-      .split(',')
-      .map((origin) => origin.trim())
-      .filter(Boolean);
+  const allowedOrigins = configuredOrigins
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
-  if (
-    isProduction &&
-    allowedOrigins.some(
-      (origin) =>
-        origin === '*' ||
-        origin.includes('localhost') ||
-        origin.includes('127.0.0.1'),
-    )
-  ) {
-    throw new Error(
-      'Production CORS_ORIGINS must contain approved application origins, not localhost or wildcard origins.',
+  const capacitorAndroidOrigin = 'https://localhost';
+
+  // Reject wildcards, malformed origins, and unapproved
+  // local addresses in production.
+  //
+  // The exact Capacitor Android origin is explicitly allowed.
+
+  if (isProduction) {
+    const invalidOrigins = allowedOrigins.filter(
+      (origin) => {
+        if (origin === '*') {
+          return true;
+        }
+
+        if (origin === capacitorAndroidOrigin) {
+          return false;
+        }
+
+        try {
+          const parsed = new URL(origin);
+
+          if (
+            parsed.protocol !== 'https:' ||
+            parsed.username ||
+            parsed.password ||
+            parsed.pathname !== '/' ||
+            parsed.search !== '' ||
+            parsed.hash !== ''
+          ) {
+            return true;
+          }
+
+          const hostname =
+            parsed.hostname.toLowerCase();
+
+          return (
+            hostname === 'localhost' ||
+            hostname === '127.0.0.1' ||
+            hostname === '[::1]' ||
+            hostname.endsWith('.localhost')
+          );
+        } catch {
+          return true;
+        }
+      },
     );
+
+    if (invalidOrigins.length > 0) {
+      throw new Error(
+        'Production CORS_ORIGINS contains an invalid or unapproved origin.',
+      );
+    }
   }
 
+  // Preserve website origins and add the Capacitor origin
+  // only when running in production.
+  //
+  // No wildcard origins are used.
+
+  const effectiveOrigins = [
+    ...new Set([
+      ...allowedOrigins,
+      ...(isProduction
+        ? [capacitorAndroidOrigin]
+        : []),
+    ]),
+  ];
+
   app.enableCors({
-    origin: allowedOrigins,
+    origin: effectiveOrigins,
     credentials: true,
     methods: [
       'GET',
@@ -134,6 +195,10 @@ async function bootstrap() {
       'OPTIONS',
     ],
   });
+
+  logger.log(
+    `CORS configured for ${effectiveOrigins.length} approved origin(s)`,
+  );
 
   // ============================================================
   // API PREFIX
