@@ -209,9 +209,17 @@ export function UserFormDialog({
 
     if (
       email &&
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      !/^[A-Z0-9._%+-]+@cbe\.com\.et$/i.test(email)
     ) {
-      setError("Enter a valid email address.");
+      setError("Email must be a valid @cbe.com.et address.");
+      return;
+    }
+
+    if (
+      phone &&
+      !/^(?:0[79]\d{8}|\+251[79]\d{8}|251[79]\d{8})$/.test(phone)
+    ) {
+      setError("Enter a valid Ethiopian mobile number.");
       return;
     }
 

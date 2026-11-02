@@ -336,12 +336,23 @@ export function BranchesPage() {
 
     if (
       form.email.trim() &&
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())
+      !/^[A-Z0-9._%+-]+@cbe\.com\.et$/i.test(form.email.trim())
     ) {
-      setFormError("Enter a valid email address.");
+      setFormError("Email must be a valid @cbe.com.et address.");
       return;
     }
 
+    if (!form.phone.trim()) {
+      setFormError("Branch phone is required.");
+      return;
+    }
+    if (
+      form.phone.trim() &&
+      !/^(?:0[79]\d{8}|\+251[79]\d{8}|251[79]\d{8})$/.test(form.phone.trim())
+    ) {
+      setFormError("Enter a valid Ethiopian mobile number.");
+      return;
+    }
     setFormError(null);
     saveMutation.mutate(form);
   }
@@ -749,6 +760,7 @@ export function BranchesPage() {
 
             <TextField
               label="Phone"
+              required
               fullWidth
               slotProps={{
                 htmlInput: { maxLength: 50 },
