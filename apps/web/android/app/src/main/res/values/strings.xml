@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CBE Digital Performance</string>
+    <string name="title_activity_main">CBE Digital Performance</string>
+    <string name="package_name">com.cbe.digitalperformance</string>
+    <string name="custom_url_scheme">com.cbe.digitalperformance</string>
+</resources>

@@ -1,4 +1,4 @@
-import axios, {
+﻿import axios, {
   type AxiosError,
   type InternalAxiosRequestConfig,
 } from 'axios';
@@ -38,7 +38,11 @@ export const apiClient =
       API_URL,
 
     timeout:
-      60_000,
+      typeof window !== 'undefined' &&
+      window.location.protocol === 'https:' &&
+      window.location.hostname === 'localhost'
+        ? 180_000
+        : 60_000,
 
     // headers: {
     //   'Content-Type':
@@ -213,6 +217,56 @@ async function refreshSession() {
 }
 
 // ============================================================================
+// ============================================================================
+// ANDROID API DIAGNOSTICS
+// ============================================================================
+
+const androidRequestStartTimes =
+  new WeakMap<InternalAxiosRequestConfig, number>();
+
+apiClient.interceptors.request.use((config) => {
+  if (
+    typeof window !== "undefined" &&
+    (window as Window & {
+      Capacitor?: {
+        getPlatform?: () => string;
+      };
+    }).Capacitor?.getPlatform?.() === "android"
+  ) {
+    androidRequestStartTimes.set(config, Date.now());
+  }
+
+  return config;
+});
+
+apiClient.interceptors.response.use(
+  (response) => {
+    androidRequestStartTimes.delete(response.config);
+    return response;
+  },
+  (error: AxiosError) => {
+    const config = error.config;
+
+    if (config) {
+      const startedAt = androidRequestStartTimes.get(config);
+
+      if (startedAt !== undefined) {
+        androidRequestStartTimes.delete(config);
+
+        console.warn("[Android API]", {
+          method: config.method?.toUpperCase(),
+          endpoint: (config.url ?? "").split("?")[0],
+          durationMs: Date.now() - startedAt,
+          status: error.response?.status ?? null,
+          code: error.code ?? null,
+          message: error.message,
+        });
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
 // RESPONSE INTERCEPTOR
 // ============================================================================
 
@@ -335,3 +389,4 @@ apiClient.interceptors.response.use(
     }
   },
 );
+

@@ -1,3 +1,5 @@
+﻿import { isAndroidApp } from "../platform/platform";
+import { AndroidDashboardFilters } from "../components/dashboard/android/android-dashboard-filters";
 import axios from "axios";
 
 import { Alert, Box, CircularProgress, Typography } from "@mui/material";
@@ -24,6 +26,7 @@ import {
 import { BranchPerformanceTable } from "../components/dashboard/branch-performance-table";
 
 import { KpiCard } from "../components/dashboard/kpi-card";
+import { AndroidKpiCard } from "../components/dashboard/android/android-kpi-card";
 
 import { PerformanceTrendChart } from "../components/dashboard/performance-trend-chart";
 
@@ -81,6 +84,39 @@ interface SummaryPanelProps {
   }>;
 }
 
+interface DashboardKpiProps {
+  title: string;
+  value: string | number;
+  subtitle: string;
+  icon: React.ReactNode;
+}
+
+function DashboardKpi({
+  title,
+  value,
+  subtitle,
+  icon,
+}: DashboardKpiProps) {
+  if (isAndroidApp()) {
+    return (
+      <AndroidKpiCard
+        title={title}
+        value={value}
+        subtitle={subtitle}
+        icon={icon}
+      />
+    );
+  }
+
+  return (
+    <KpiCard
+      title={title}
+      value={value}
+      subtitle={subtitle}
+      icon={icon}
+    />
+  );
+}
 function SummaryPanel({ title, items }: SummaryPanelProps) {
   return (
     <Box
@@ -320,7 +356,22 @@ const achievementDisplayValue = hasAssignedTarget
           mb: 3,
         }}
       >
-        <Typography variant="h4">Digital Performance Dashboard</Typography>
+        {isAndroidApp() ? (
+  <Typography
+    variant="h5"
+    sx={{
+      fontWeight: 800,
+      letterSpacing: "-0.03em",
+      lineHeight: 1.2,
+    }}
+  >
+    Overview
+  </Typography>
+) : (
+  <Typography variant="h4">
+    Digital Performance Dashboard
+  </Typography>
+)}
 
         <Typography
           color="text.secondary"
@@ -351,7 +402,11 @@ const achievementDisplayValue = hasAssignedTarget
           borderRadius: 2,
         }}
       >
-        <OrganizationFilter />
+        {isAndroidApp() ? (
+  <AndroidDashboardFilters />
+) : (
+  <OrganizationFilter />
+)}
       </Box>
 
       {/* =====================================================================
@@ -401,24 +456,22 @@ const achievementDisplayValue = hasAssignedTarget
             sx={{
               display: "grid",
 
-gridTemplateColumns: {
-  xs: "1fr",
-
-  sm: "repeat(2, minmax(0, 1fr))",
-
-  md: "repeat(3, minmax(0, 1fr))",
-
-  lg: "repeat(4, minmax(0, 1fr))",
-
-  xl: "repeat(4, minmax(0, 1fr))",
-},
+gridTemplateColumns: isAndroidApp()
+  ? "repeat(2, minmax(0, 1fr))"
+  : {
+      xs: "1fr",
+      sm: "repeat(2, minmax(0, 1fr))",
+      md: "repeat(3, minmax(0, 1fr))",
+      lg: "repeat(4, minmax(0, 1fr))",
+      xl: "repeat(4, minmax(0, 1fr))",
+    },
 
               gap: 2,
 
               mb: 3,
             }}
           >
- <KpiCard
+ <DashboardKpi
   title="Target"
   value={targetDisplayValue}
   subtitle={
@@ -431,14 +484,14 @@ gridTemplateColumns: {
   icon={<TrackChangesOutlined />}
 />
 
-            <KpiCard
+            <DashboardKpi
               title="Customer Visits"
               value={overview.performance.activity.customerVisits}
               subtitle={productId ? "All activity visits" : "Recorded visits"}
               icon={<PersonSearchOutlined />}
             />
 
-            <KpiCard
+            <DashboardKpi
               title="Customers Educated"
               value={overview.performance.activity.customersEducated}
               subtitle={
@@ -447,21 +500,21 @@ gridTemplateColumns: {
               icon={<SchoolOutlined />}
             />
 
-            <KpiCard
+            <DashboardKpi
               title="Activations"
               value={overview.performance.activation.activations}
               subtitle={productId ? "Selected product" : "Total activations"}
               icon={<AdsClickOutlined />}
             />
 
-            <KpiCard
+            <DashboardKpi
               title="Transactions"
               value={overview.performance.transaction.transactions}
               subtitle={productId ? "Selected product" : "Total transactions"}
               icon={<PointOfSaleOutlined />}
             />
 
-            <KpiCard
+            <DashboardKpi
               title="Conversion"
               value={`${overview.performance.conversion.rate.toFixed(1)}%`}
               subtitle={
@@ -470,7 +523,7 @@ gridTemplateColumns: {
               icon={<GroupsOutlined />}
             />
 
-<KpiCard
+<DashboardKpi
   title="Achievement"
   value={achievementDisplayValue}
   subtitle={
@@ -624,3 +677,7 @@ gridTemplateColumns: {
     </Box>
   );
 }
+
+
+
+
